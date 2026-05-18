@@ -5,9 +5,10 @@
 #  Cách dùng:
 #    scripts/git_add.sh                  -> stage tất cả (mặc định)
 #    scripts/git_add.sh src app.py       -> stage cụ thể
-#    scripts/git_add.sh code             -> chỉ code (src app.py requirements)
+#    scripts/git_add.sh code             -> chỉ code (src + scripts + app.py)
 #    scripts/git_add.sh db               -> chỉ chroma_db
 #    scripts/git_add.sh data             -> chỉ data/
+#    scripts/git_add.sh scripts          -> chỉ scripts/
 # ─────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -18,8 +19,8 @@ if [[ $# -eq 0 ]]; then
     echo "Staging tất cả thay đổi..."
     git add -A
 elif [[ "$1" == "code" ]]; then
-    echo "Staging code..."
-    git add src app.py requirements.txt .env.example
+    echo "Staging code (src scripts app.py requirements .env.example)..."
+    git add src scripts app.py requirements.txt .env.example
     [[ -f .streamlit/config.toml ]] && git add .streamlit/config.toml
     [[ -f .streamlit/secrets.toml.example ]] && git add .streamlit/secrets.toml.example
 elif [[ "$1" == "db" ]]; then
@@ -28,6 +29,9 @@ elif [[ "$1" == "db" ]]; then
 elif [[ "$1" == "data" ]]; then
     echo "Staging data/ ..."
     git add data
+elif [[ "$1" == "scripts" ]]; then
+    echo "Staging scripts/ ..."
+    git add scripts
 else
     git add "$@"
 fi
