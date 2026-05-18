@@ -1,0 +1,27 @@
+# Chuẩn hoá line endings (deploy Linux)
+*           text=auto eol=lf
+*.py        text eol=lf
+*.ipynb     text eol=lf
+*.md        text eol=lf
+*.toml      text eol=lf
+*.txt       text eol=lf
+*.csv       text eol=lf
+*.html      text eol=lf
+*.css       text eol=lf
+*.js        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+# Binary
+*.pdf       binary
+*.docx      binary
+*.doc       binary
+*.xlsx      binary
+*.xls       binary
+*.pptx      binary
+*.ppt       binary
+*.sqlite3 filter=lfs diff=lfs merge=lfs -text
+*.bin filter=lfs diff=lfs merge=lfs -text
+# LFS cho toàn bộ kho dữ liệu lớn / artifact build
+chroma_db/** filter=lfs diff=lfs merge=lfs -text
+data/**      filter=lfs diff=lfs merge=lfs -text

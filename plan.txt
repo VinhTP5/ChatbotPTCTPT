@@ -1,0 +1,53 @@
+CHECKLIST THUC THI PLAN - CAP NHAT 2026-05-18
+
+Muc tieu:
+- Rà tinh nhat quan giua plan va README.
+- Cap nhat checklist theo trang thai code/docs hien tai.
+- KHONG tu dong build DB, KHONG push git (user tu thuc hien qua script).
+
+DOI CHIEU NHANH VOI README
+- README da neu dung cac nhom tinh nang chinh: multi-provider, multi-collection, retrieval mode, script build/deploy.
+- README da tro den tai lieu chi tiet: docs/DEPLOY.md va docs/SCRIPTS.md.
+- Cac muc trong plan ben duoi khop voi noi dung README va trang thai source code hien tai.
+
+CHECKLIST TRANG THAI
+
+1) Dieu huong lua chon nguon tai lieu (FPT / Bo GD)
+- [x] Da co bo loc category trong UI.
+- [x] Da map dung 2 nguon: QD (FPT), TT32_2018 (Bo GD).
+- [x] Da ap dung filter vao retriever runtime.
+
+2) Cau hinh chunking theo plan
+- [x] Chunk variant 1000/150 (coarse).
+- [x] Chunk variant 256/128 (fine).
+- [x] Chunk variant 800/200 (balanced).
+- [x] Chunking strategy: standard / late / long_late.
+- [x] Long Late Chunking da duoc trien khai va dung trong build_db.
+
+3) Chu thich va docstring theo huong dev de hieu
+- [x] Cac module chinh da co docstring/chu thich ro muc dich.
+- [x] README + docs da mo ta tong quan ro rang cho dev.
+
+4) Huong dan deploy day du
+- [x] docs/DEPLOY.md da bao gom local setup, build DB, git workflow, Streamlit Cloud.
+
+5) Script tu dong hoa theo yeu cau
+- [x] Build 1 collection: build_db.cmd/sh.
+- [x] Build ma tran variant: build_all_variants.cmd/sh.
+- [x] Kiem tra trang thai DB: db_status.cmd/sh.
+- [x] Git workflow: git_init, git_status, git_add, git_diff, git_commit, git_push, git_rebase (cmd/sh).
+- [x] Deploy all-in-one: deploy.cmd/sh.
+
+6) Chat retrieval options
+- [x] Search type: similarity / mmr / similarity_score_threshold.
+- [x] Co debug retrieval va export CSV chunk da retrieve.
+
+HANG MUC CHUA THUC HIEN TRONG FILE NAY
+- [ ] Khong chay build_db (theo yeu cau user).
+- [ ] Khong push git (theo yeu cau user).
+- [ ] Moi khi chay lai qua trinh tao chunk db can check so sanh voi du lieu goc xem file nao da co thi khong build chunk, file nao da xoa thi xoa chunk db tuong ung, file nao chua build thi build bo sung, khong build lai toan boj db de tiet kiem thoi gian va index, metadata lai neu can
+- [ ] khong chunking cac file .doc, .html, .csv, .htm, .md 
+
+GHI CHU BAO TRI
+- Neu bo sung them category tai lieu trong data/, can cap nhat SOURCE_CATEGORIES de UI filter hien dung.
+- Neu bo sung embed/chunk strategy moi, can cap nhat ca config + docs + scripts build_all_variants de tranh lech README/plan.
