@@ -721,7 +721,7 @@ def main() -> None:
         ),
     )
 
-    parser.add_argument("--mode", choices=["rebuild", "add", "remove", "sync", "status"], default="rebuild")
+    parser.add_argument("--mode", choices=["rebuild", "add", "remove", "sync", "status"], default="sync")
     parser.add_argument("--docs_dir", default=DOCS_DIR, help="Thu muc chua tai lieu")
     parser.add_argument("--db_dir", default=CHROMA_DIR, help="Thu muc luu database")
     parser.add_argument("--domain", default=DEFAULT_DOMAIN, help="Domain cho source URL")

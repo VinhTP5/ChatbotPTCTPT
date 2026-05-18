@@ -1,11 +1,13 @@
 """
 document_loader.py
 ------------------
-Load tài liệu và gán metadata đầy đủ cho mọi định dạng.
+Load tài liệu và gán metadata đầy đủ cho mọi định dạng được hỗ trợ.
 
-Định dạng hỗ trợ:
-    .pdf   .docx  .doc   .xlsx  .xls   .pptx  .ppt
-    .txt   .md    .csv   .html  .htm
+Định dạng hỗ trợ (khớp với SUPPORTED_EXTENSIONS trong config.py):
+    .pdf   .docx  .xlsx  .xls   .pptx  .ppt  .txt
+
+Định dạng KHÔNG được index (loại vì gây nhiễu hoặc chất lượng retrieval kém):
+    .doc   .csv   .html  .htm   .md
 
 Metadata gán cho MỌI chunk (đảm bảo đồng nhất, không bị thiếu trường):
     document_name  : tên file không có ext   (dùng cho hiển thị / dedupe)
@@ -59,17 +61,6 @@ def _load_docx(path: Path) -> list[Document]:
     return Docx2txtLoader(str(path)).load()
 
 
-def _load_doc(path: Path) -> list[Document]:
-    """File .doc cũ — dùng UnstructuredWordDocumentLoader."""
-    try:
-        from langchain_community.document_loaders import UnstructuredWordDocumentLoader
-        return UnstructuredWordDocumentLoader(str(path)).load()
-    except Exception:
-        # Fallback: thử Docx2txtLoader (đôi khi cũng đọc được .doc đơn giản)
-        from langchain_community.document_loaders import Docx2txtLoader
-        return Docx2txtLoader(str(path)).load()
-
-
 def _load_excel(path: Path) -> list[Document]:
     from langchain_community.document_loaders import UnstructuredExcelLoader
     return UnstructuredExcelLoader(str(path), mode="elements").load()
@@ -85,37 +76,17 @@ def _load_text(path: Path) -> list[Document]:
     return TextLoader(str(path), encoding="utf-8", autodetect_encoding=True).load()
 
 
-def _load_csv(path: Path) -> list[Document]:
-    from langchain_community.document_loaders import CSVLoader
-    try:
-        return CSVLoader(str(path), encoding="utf-8").load()
-    except UnicodeDecodeError:
-        return CSVLoader(str(path), encoding="latin-1").load()
-
-
-def _load_html(path: Path) -> list[Document]:
-    try:
-        from langchain_community.document_loaders import BSHTMLLoader
-        return BSHTMLLoader(str(path), open_encoding="utf-8").load()
-    except Exception:
-        # Fallback: đọc text thường
-        return _load_text(path)
-
-
 # Map ext → (loader function, has_page_metadata)
+# Chỉ chứa các định dạng trong SUPPORTED_EXTENSIONS — các định dạng khác
+# (.doc, .csv, .html, .htm, .md) không được index vào ChromaDB.
 _LOADERS: dict[str, tuple[Any, bool]] = {
     ".pdf" : (_load_pdf,   True),
     ".docx": (_load_docx,  False),
-    ".doc" : (_load_doc,   False),
     ".xlsx": (_load_excel, False),
     ".xls" : (_load_excel, False),
     ".pptx": (_load_ppt,   False),
     ".ppt" : (_load_ppt,   False),
     ".txt" : (_load_text,  False),
-    ".md"  : (_load_text,  False),
-    ".csv" : (_load_csv,   False),
-    ".html": (_load_html,  False),
-    ".htm" : (_load_html,  False),
 }
 
 
