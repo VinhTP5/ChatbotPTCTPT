@@ -11,6 +11,7 @@ Khác với phiên bản cũ:
 
 from __future__ import annotations
 
+import unicodedata
 from pathlib import Path
 from typing import Any, Optional
 
@@ -29,11 +30,15 @@ from config import (
     DEFAULT_FETCH_K,
     DEFAULT_LAMBDA_MULT,
     DEFAULT_MAX_TOKENS,
+    DEFAULT_NEIGHBOR_K,
+    DEFAULT_RERANK_TOP_N,
     DEFAULT_SCORE_THRESHOLD,
     DEFAULT_SEARCH_TYPE,
     DEFAULT_TEMPERATURE,
     DEFAULT_TOP_K,
+    DEFAULT_USE_RERANK,
     PROVIDERS,
+    RERANKER_MODEL,
     SYSTEM_PROMPT_V2,
     build_collection_name,
     get_chunking_strategy,
@@ -156,6 +161,9 @@ class RAGEngine:
         chunk_variant: str = DEFAULT_CHUNK_VARIANT,
         chunking_strategy: str = DEFAULT_CHUNKING_STRATEGY,
         categories: Optional[list[str]] = None,
+        use_rerank: bool = DEFAULT_USE_RERANK,
+        neighbor_k: int = DEFAULT_NEIGHBOR_K,
+        rerank_top_n: Optional[int] = DEFAULT_RERANK_TOP_N,
     ):
         # 1) Kiểm tra DB
         db_path = Path(chroma_dir)
@@ -204,6 +212,14 @@ class RAGEngine:
             categories=categories,
         )
 
+        # Neighbor context & Reranker (opt-in)
+        self._neighbor_k: int = max(0, int(neighbor_k))
+        self._use_rerank: bool = bool(use_rerank)
+        self._rerank_top_n: Optional[int] = rerank_top_n
+        self._reranker = None  # lazy load khi cần
+        if self._use_rerank:
+            self._load_reranker()
+
         # 3) Provider & LLM
         self.provider = resolve_provider(provider)
         self.model    = resolve_model(self.provider, model)
@@ -225,6 +241,92 @@ class RAGEngine:
             ),
         ])
         self._answer_chain = self.prompt | self.llm | StrOutputParser()
+
+    # ── Reranker & Neighbor helpers ──────────────────────────────────────────
+
+    def _load_reranker(self) -> None:
+        """Lazy load BGEReranker (tái dùng singleton)."""
+        try:
+            from reranker import get_reranker
+            self._reranker = get_reranker(RERANKER_MODEL)
+        except Exception as exc:
+            logger.warning("[RAGEngine] Không thể load reranker: %s", exc)
+            self._use_rerank = False
+            self._reranker = None
+
+    def _expand_with_neighbors(self, docs: list[Document]) -> list[Document]:
+        """
+        Mở rộng context bằng cách lấy thêm chunk liền kề (±neighbor_k) trong
+        cùng tài liệu.
+
+        Quy trình:
+          1. Với mỗi doc, lấy document_name và chunk_index từ metadata.
+          2. Query Chroma với where filter theo document_name, lọc chunk_index
+             trong [idx - neighbor_k, idx + neighbor_k].
+          3. Deduplicate theo chunk_index rồi merge vào danh sách gốc.
+        """
+        if self._neighbor_k <= 0 or not docs:
+            return docs
+
+        seen_keys: set[str] = set()
+        expanded: list[Document] = []
+
+        # Thêm docs gốc vào tập seen trước
+        for doc in docs:
+            meta = doc.metadata or {}
+            key = f"{meta.get('document_name', '')}|{meta.get('chunk_index', '')}"
+            seen_keys.add(key)
+            expanded.append(doc)
+
+        # Với mỗi doc gốc, lấy các chunk láng giềng
+        for doc in docs:
+            meta = doc.metadata or {}
+            doc_name = meta.get("document_name")
+            chunk_idx = meta.get("chunk_index")
+
+            if not doc_name or chunk_idx is None:
+                continue
+
+            try:
+                chunk_idx = int(chunk_idx)
+            except (ValueError, TypeError):
+                continue
+
+            lo = chunk_idx - self._neighbor_k
+            hi = chunk_idx + self._neighbor_k
+
+            try:
+                # Lấy toàn bộ chunk của document này (giới hạn để tránh quá nhiều)
+                results = self.vectorstore.get(
+                    where={"document_name": doc_name},
+                    limit=200,
+                    include=["documents", "metadatas"],
+                )
+                neighbor_docs = results.get("documents", [])
+                neighbor_metas = results.get("metadatas", [])
+
+                for content, nmeta in zip(neighbor_docs, neighbor_metas):
+                    cidx = nmeta.get("chunk_index")
+                    if cidx is None:
+                        continue
+                    try:
+                        cidx = int(cidx)
+                    except (ValueError, TypeError):
+                        continue
+
+                    if not (lo <= cidx <= hi):
+                        continue
+
+                    n_key = f"{doc_name}|{cidx}"
+                    if n_key in seen_keys:
+                        continue
+                    seen_keys.add(n_key)
+                    expanded.append(Document(page_content=content, metadata=nmeta))
+
+            except Exception as exc:
+                logger.debug("[RAGEngine] neighbor expand error for %s: %s", doc_name, exc)
+
+        return expanded
 
     # ── Quản lý filter nguồn ─────────────────────────────────────────────────
 
@@ -279,6 +381,9 @@ class RAGEngine:
         lambda_mult: Optional[float] = None,
         score_threshold: Optional[float] = None,
         categories: Optional[list[str]] = None,
+        use_rerank: Optional[bool] = None,
+        neighbor_k: Optional[int] = None,
+        rerank_top_n: Optional[int] = None,
     ) -> None:
         """Cập nhật retrieval params runtime mà không cần reload model."""
         if top_k is not None:
@@ -293,6 +398,16 @@ class RAGEngine:
             self._score_threshold = score_threshold
         if categories is not None:
             self._categories = list(categories) if categories else None
+        if neighbor_k is not None:
+            self._neighbor_k = max(0, int(neighbor_k))
+        if rerank_top_n is not None:
+            self._rerank_top_n = rerank_top_n
+        if use_rerank is not None:
+            prev = self._use_rerank
+            self._use_rerank = bool(use_rerank)
+            # Load reranker nếu bật mới
+            if self._use_rerank and not prev and self._reranker is None:
+                self._load_reranker()
         self._rebuild_retriever()
 
     @property
@@ -369,10 +484,24 @@ class RAGEngine:
     # ── API công khai ────────────────────────────────────────────────────────
 
     def ask(self, question: str) -> RAGResult:
-        """Hỏi 1 câu — retrieve đúng 1 lần và trả lời."""
+        """Hỏi 1 câu — retrieve đúng 1 lần và trả lời.
+
+        Pipeline: NFC → retrieve → neighbor expand → rerank → format → LLM
+        """
         if not question or not question.strip():
             raise ValueError("Câu hỏi không được rỗng.")
-        docs    = self.retriever.invoke(question)
+        # 1) Chuẩn hóa Unicode NFC để tránh lỗi so sánh tiếng Việt tổ hợp
+        question = unicodedata.normalize("NFC", question)
+        # 2) Retrieve
+        docs = self.retriever.invoke(question)
+        # 3) Neighbor context expansion (nếu bật)
+        if self._neighbor_k > 0:
+            docs = self._expand_with_neighbors(docs)
+        # 4) Rerank (nếu bật)
+        if self._use_rerank and self._reranker is not None:
+            top_n = self._rerank_top_n if self._rerank_top_n is not None else self._top_k
+            docs = self._reranker.rerank(question, docs, top_n=top_n)
+        # 5) Format context → LLM
         context = format_docs(docs)
         answer  = self._answer_chain.invoke({"input": question, "context": context})
         sources = get_unique_sources(docs)
@@ -401,6 +530,9 @@ def load_rag_engine(
     chunk_variant: str = DEFAULT_CHUNK_VARIANT,
     chunking_strategy: str = DEFAULT_CHUNKING_STRATEGY,
     categories: Optional[list[str]] = None,
+    use_rerank: bool = DEFAULT_USE_RERANK,
+    neighbor_k: int = DEFAULT_NEIGHBOR_K,
+    rerank_top_n: Optional[int] = DEFAULT_RERANK_TOP_N,
     # Giữ tham số cũ để không phá interface
     groq_api_key: Optional[str] = None,   # noqa: ARG001  (deprecated, ignored)
 ) -> tuple[RAGEngine, Any, int]:
@@ -410,8 +542,11 @@ def load_rag_engine(
     Trả về tuple (engine, retriever, doc_count) để tương thích với app.py cũ.
 
     Args:
-        categories: lọc retriever theo metadata.category (vd ["QD"] hoặc
-                    ["QD","TT32_2018"]). None = không lọc.
+        categories  : lọc retriever theo metadata.category (vd ["QD"] hoặc
+                      ["QD","TT32_2018"]). None = không lọc.
+        use_rerank  : bật BGE Reranker sau retrieval (chậm hơn ~2-3s).
+        neighbor_k  : số chunk láng giềng mở rộng (0 = tắt, 1 = ±1 chunk).
+        rerank_top_n: số chunk giữ lại sau rerank (None = bằng top_k).
     """
     engine = RAGEngine(
         provider    = provider,
@@ -428,6 +563,9 @@ def load_rag_engine(
         chunk_variant = chunk_variant,
         chunking_strategy = chunking_strategy,
         categories  = categories,
+        use_rerank  = use_rerank,
+        neighbor_k  = neighbor_k,
+        rerank_top_n = rerank_top_n,
     )
     return engine, engine.retriever, engine.doc_count
 

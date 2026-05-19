@@ -62,7 +62,7 @@ EMBED_MODELS: dict[str, dict[str, str]] = {
     },
 }
 
-DEFAULT_EMBED_ALIAS = "minilm"
+DEFAULT_EMBED_ALIAS = "bge_m3"
 EMBED_MODEL = EMBED_MODELS[DEFAULT_EMBED_ALIAS]["name"]
 
 
@@ -84,14 +84,14 @@ CHUNK_VARIANTS = {
         "label": "Coarse — 1000/150",
     },
 }
-DEFAULT_CHUNK_VARIANT = "coarse"
+DEFAULT_CHUNK_VARIANT = "fine"
 
 CHUNKING_STRATEGIES = {
     "standard": "Standard — embed từng chunk độc lập",
     "late": "Late Chunking — embed full text rồi pool theo chunk",
     "long_late": "Long Late Chunking — overlap windows cho tài liệu dài",
 }
-DEFAULT_CHUNKING_STRATEGY = "standard"
+DEFAULT_CHUNKING_STRATEGY = "late"
 
 CHUNK_SIZE = CHUNK_VARIANTS[DEFAULT_CHUNK_VARIANT]["chunk_size"]
 CHUNK_OVERLAP = CHUNK_VARIANTS[DEFAULT_CHUNK_VARIANT]["chunk_overlap"]
@@ -132,6 +132,12 @@ DEFAULT_LAMBDA_MULT = 0.5
 DEFAULT_SCORE_THRESHOLD: Optional[float] = None
 DEFAULT_TEMPERATURE = 0.1
 DEFAULT_MAX_TOKENS  = 2048
+
+# ── Reranker & Neighbor context ───────────────────────────────────────────────
+RERANKER_MODEL    = "BAAI/bge-reranker-v2-m3"
+DEFAULT_USE_RERANK  = False   # opt-in: tắt mặc định, bật qua sidebar
+DEFAULT_NEIGHBOR_K  = 0       # 0 = tắt neighbor expand; 1 = lấy ±1 chunk
+DEFAULT_RERANK_TOP_N: Optional[int] = None  # None = bằng top_k
 
 
 # ── File formats được hỗ trợ ──────────────────────────────────────────────────
@@ -257,7 +263,7 @@ PROVIDERS: dict[str, dict] = {
 # Provider mặc định nếu nhiều provider cùng có key (dev override bằng env)
 DEFAULT_PROVIDER_ORDER = [
     os.getenv("CHATBOT_DEFAULT_PROVIDER", "").strip().lower(),
-    "groq", "openai", "anthropic", "google", "deepseek",
+    "openai", "groq", "anthropic", "google", "deepseek",
 ]
 
 

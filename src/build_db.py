@@ -92,7 +92,8 @@ def get_embeddings(embed_alias: str) -> HuggingFaceEmbeddings:
     print(f"Embedding model: {embed_alias} -> {model_name}")
     return HuggingFaceEmbeddings(
         model_name=model_name,
-        encode_kwargs={"batch_size": 64, "show_progress_bar": False},
+        show_progress=False,
+        encode_kwargs={"batch_size": 64},
     )
 
 

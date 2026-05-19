@@ -42,5 +42,8 @@ desktop.ini
 # ── Log files ────────────────────────────────────────────────────────────────
 *.log
 
-# ── KHÔNG ignore: data/, chroma_db/ — cần push để deploy ─────────────────────
-# (Nếu DB quá lớn dùng Git LFS — xem .gitattributes)
+# ── chroma_db — chỉ ignore file gốc lớn, commit các part ────────────────────
+# File sqlite3 gốc (2.2 GB) quá lớn, không commit trực tiếp.
+# Thay vào đó dùng scripts/split_db.py để tạo các .part.NNN (<48 MB mỗi file).
+# Các file khác (data_level0.bin, .pickle, ...) commit bình thường.
+chroma_db/chroma.sqlite3

@@ -1,53 +1,216 @@
-CHECKLIST THUC THI PLAN - CAP NHAT 2026-05-18
 
-Muc tieu:
-- Rà tinh nhat quan giua plan va README.
-- Cap nhat checklist theo trang thai code/docs hien tai.
-- KHONG tu dong build DB, KHONG push git (user tu thuc hien qua script).
+╔══════════════════════════════════════════════════════════════════════════════╗
+║            PLAN HOÀN CHỈNH — ChatbotPTCTPT  (cập nhật 2026-05-19)         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 
-DOI CHIEU NHANH VOI README
-- README da neu dung cac nhom tinh nang chinh: multi-provider, multi-collection, retrieval mode, script build/deploy.
-- README da tro den tai lieu chi tiet: docs/DEPLOY.md va docs/SCRIPTS.md.
-- Cac muc trong plan ben duoi khop voi noi dung README va trang thai source code hien tai.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHẦN A — ĐÃ HOÀN THÀNH (không cần làm gì thêm)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-CHECKLIST TRANG THAI
+[DONE] Không tự chạy build_db (theo yêu cầu user)
+[DONE] Không tự push git (theo yêu cầu user)
 
-1) Dieu huong lua chon nguon tai lieu (FPT / Bo GD)
-- [x] Da co bo loc category trong UI.
-- [x] Da map dung 2 nguon: QD (FPT), TT32_2018 (Bo GD).
-- [x] Da ap dung filter vao retriever runtime.
+[DONE] Sync thông minh — không rebuild toàn bộ DB
+       → mode_sync() trong src/build_db.py đã so sánh registry <> disk:
+         · File xóa khỏi data/ → xóa chunks tương ứng trong Chroma
+         · File mới → index bổ sung
+         · File sửa (mtime khác) → xóa chunk cũ, index lại
+         · File không đổi → bỏ qua
+       → Mỗi combination có file registry riêng:
+         chroma_db/indexed_files__{embed}__{variant}__{strategy}.json
 
-2) Cau hinh chunking theo plan
-- [x] Chunk variant 1000/150 (coarse).
-- [x] Chunk variant 256/128 (fine).
-- [x] Chunk variant 800/200 (balanced).
-- [x] Chunking strategy: standard / late / long_late.
-- [x] Long Late Chunking da duoc trien khai va dung trong build_db.
+[DONE] Không chunking .doc, .html, .csv, .htm, .md
+       → SUPPORTED_EXTENSIONS trong config.py chỉ gồm:
+         .pdf .docx .xlsx .xls .pptx .ppt .txt
+       → document_loader.py chỉ có loader cho các ext trên
 
-3) Chu thich va docstring theo huong dev de hieu
-- [x] Cac module chinh da co docstring/chu thich ro muc dich.
-- [x] README + docs da mo ta tong quan ro rang cho dev.
+[DONE] Chia nhỏ chroma.sqlite3 thành file < 50MB
+       → scripts/split_db.py: chia 48MB/part, ghi MD5 checksum
+       → app.py._reassemble_sqlite(): tự ghép lại khi deploy trên
+         Streamlit Cloud (giữ nguyên file gốc trên máy dev)
 
-4) Huong dan deploy day du
-- [x] docs/DEPLOY.md da bao gom local setup, build DB, git workflow, Streamlit Cloud.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHẦN B — CẦN LÀM — 3 NHÓM THEO ĐỘ PHỨC TẠP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-5) Script tu dong hoa theo yeu cau
-- [x] Build 1 collection: build_db.cmd/sh.
-- [x] Build ma tran variant: build_all_variants.cmd/sh.
-- [x] Kiem tra trang thai DB: db_status.cmd/sh.
-- [x] Git workflow: git_init, git_status, git_add, git_diff, git_commit, git_push, git_rebase (cmd/sh).
-- [x] Deploy all-in-one: deploy.cmd/sh.
+══════════════════════════════════════════════════════════
+NHÓM 1 — UNICODE NFC NORMALIZE  (đơn giản, rủi ro thấp)
+══════════════════════════════════════════════════════════
+Mục tiêu: chuẩn hóa tiếng Việt (NFC) trước khi split và embed
+để tránh lỗi so sánh ký tự tổ hợp (ổ ≠ ổ khi dùng 2 codepoint).
 
-6) Chat retrieval options
-- [x] Search type: similarity / mmr / similarity_score_threshold.
-- [x] Co debug retrieval va export CSV chunk da retrieve.
+Files cần sửa:
+┌─────────────────────────────────────────────────────────┐
+│  src/document_loader.py                                 │
+├─────────────────────────────────────────────────────────┤
+│  1. Thêm import unicodedata ở đầu file                  │
+│  2. Thêm hàm trợ giúp:                                  │
+│       def _nfc(text: str) -> str:                       │
+│           return unicodedata.normalize("NFC", text or "")│
+│  3. concat_pages_text(): áp dụng _nfc cho page_content  │
+│     trước khi join:                                      │
+│       content = _nfc((p.page_content or "").strip())    │
+│  4. chunk_file(): gọi _nfc(chunk.page_content) trên     │
+│     mỗi chunk SAU KHI split nhưng TRƯỚC khi gán metadata│
+│  5. split_text_with_spans(): gọi _nfc(text) ở đầu hàm  │
+└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  src/rag_engine.py                                      │
+├─────────────────────────────────────────────────────────┤
+│  6. Trong RAGEngine.ask(): normalize câu hỏi đầu vào   │
+│       question = unicodedata.normalize("NFC", question) │
+└─────────────────────────────────────────────────────────┘
 
-HANG MUC CHUA THUC HIEN TRONG FILE NAY
-- [ ] Khong chay build_db (theo yeu cau user).
-- [ ] Khong push git (theo yeu cau user).
-- [ ] Moi khi chay lai qua trinh tao chunk db can check so sanh voi du lieu goc xem file nao da co thi khong build chunk, file nao da xoa thi xoa chunk db tuong ung, file nao chua build thi build bo sung, khong build lai toan boj db de tiet kiem thoi gian va index, metadata lai neu can
-- [ ] khong chunking cac file .doc, .html, .csv, .htm, .md 
+Ghi chú: late_chunking.py không cần sửa vì nhận text đã normalize
+từ concat_pages_text(). Query trong embed_query() được normalize
+qua ask() trước khi gọi retriever.
 
-GHI CHU BAO TRI
-- Neu bo sung them category tai lieu trong data/, can cap nhat SOURCE_CATEGORIES de UI filter hien dung.
-- Neu bo sung embed/chunk strategy moi, can cap nhat ca config + docs + scripts build_all_variants de tranh lech README/plan.
+LƯU Ý QUAN TRỌNG: Sau khi sửa xong, các collection cũ trong
+chroma_db có thể bị lệch Unicode với chunk mới. Nếu muốn
+nhất quán hoàn toàn, cần rebuild collection đang dùng
+(bge_m3__fine__late). Tuy nhiên trong thực tế ảnh hưởng nhỏ
+vì retrieval dùng cosine similarity — chỉ ảnh hưởng exact match.
+→ Quyết định: KHÔNG rebuild ngay, chỉ áp dụng từ lần index mới.
+
+══════════════════════════════════════════════════════════
+NHÓM 2 — CẤU HÌNH MẶC ĐỊNH  (đơn giản, thay đổi config)
+══════════════════════════════════════════════════════════
+Mục tiêu: đổi default stack thành openai-4o + bge-m3 + fine + late + mmr
+(thay cho minilm + coarse + standard + mmr hiện tại).
+
+Files cần sửa:
+┌─────────────────────────────────────────────────────────┐
+│  src/config.py                                          │
+├─────────────────────────────────────────────────────────┤
+│  Dòng 65: DEFAULT_EMBED_ALIAS = "minilm"                │
+│    → đổi thành: DEFAULT_EMBED_ALIAS = "bge_m3"          │
+│                                                         │
+│  Dòng 87: DEFAULT_CHUNK_VARIANT = "coarse"              │
+│    → đổi thành: DEFAULT_CHUNK_VARIANT = "fine"          │
+│                                                         │
+│  Dòng 94: DEFAULT_CHUNKING_STRATEGY = "standard"        │
+│    → đổi thành: DEFAULT_CHUNKING_STRATEGY = "late"      │
+│                                                         │
+│  Dòng 258-262: DEFAULT_PROVIDER_ORDER                   │
+│    → đảm bảo "openai" nằm đầu danh sách fallback:      │
+│      DEFAULT_PROVIDER_ORDER = [                         │
+│          os.getenv("CHATBOT_DEFAULT_PROVIDER","").strip().lower(),│
+│          "openai", "groq", "anthropic", "google", "deepseek",│
+│      ]                                                  │
+│    (chỉ thay đổi thứ tự — openai lên đầu thay groq)    │
+│                                                         │
+│  DEFAULT_SEARCH_TYPE = "mmr" ← ĐÃ ĐÚNG, không cần đổi │
+└─────────────────────────────────────────────────────────┘
+
+Tác động UI (app.py): không cần sửa code app.py — UI đọc
+DEFAULT_* từ config.py, sẽ tự hiển thị bge_m3 + fine + late
+là lựa chọn mặc định. Collection bge_m3__fine__late đã có
+60 file indexed.
+
+══════════════════════════════════════════════════════════
+NHÓM 3 — NEIGHBOR + RERANK  (phức tạp nhất, cần test kỹ)
+══════════════════════════════════════════════════════════
+Mục tiêu: bổ sung 2 kỹ thuật nâng cao sau retrieval:
+  (a) Neighbor expansion: mở rộng context bằng cách lấy thêm
+      chunk liền kề (chunk_index ± neighbor_k) trong cùng tài liệu
+  (b) Reranker: dùng BAAI/bge-reranker-v2-m3 để xếp lại thứ tự
+      chunks theo relevance thực sự (cross-encoder, chính xác hơn
+      cosine similarity)
+
+─────────────────────────────────────────────────────────
+BƯỚC 3.1 — Tạo src/reranker.py (file mới)
+─────────────────────────────────────────────────────────
+  Class BGEReranker:
+    __init__(model_name="BAAI/bge-reranker-v2-m3", device=None)
+      · Load AutoTokenizer + AutoModelForSequenceClassification
+      · Fallback gracefully nếu model chưa download
+
+    rerank(query: str, docs: list[Document], top_n: int) -> list[Document]
+      · Tạo pairs [(query, doc.page_content), ...]
+      · Tokenize batch → forward pass → sigmoid score
+      · Sắp xếp giảm dần theo score
+      · Trả về top_n docs đã rerank
+
+    Xử lý batch lớn: chia thành sub-batches 32 items/batch
+    để tránh OOM khi docs nhiều.
+
+  Hàm module-level:
+    get_reranker(model_name=...) -> BGEReranker (singleton/cache)
+
+─────────────────────────────────────────────────────────
+BƯỚC 3.2 — Sửa src/config.py
+─────────────────────────────────────────────────────────
+  Thêm vào cuối phần Retrieval:
+    RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
+    DEFAULT_USE_RERANK = False          # opt-in, không bắt buộc
+    DEFAULT_NEIGHBOR_K = 0              # 0 = tắt, 1 = lấy ±1 chunk
+    DEFAULT_RERANK_TOP_N = None         # None = bằng top_k
+
+─────────────────────────────────────────────────────────
+BƯỚC 3.3 — Sửa src/rag_engine.py
+─────────────────────────────────────────────────────────
+  RAGEngine.__init__():
+    + Thêm params: use_rerank=False, neighbor_k=0, rerank_top_n=None
+    + Nếu use_rerank=True: khởi tạo BGEReranker (lazy load)
+    + Lưu self._use_rerank, self._neighbor_k, self._rerank_top_n
+
+  Thêm method _expand_with_neighbors(docs):
+    · Với mỗi doc, đọc chunk_index và document_name từ metadata
+    · Query Chroma với where filter = {document_name: X} để lấy
+      chunk_index trong khoảng [idx-neighbor_k, idx+neighbor_k]
+    · Deduplicate theo chunk_index, giữ thứ tự ban đầu
+    · Trả về docs mở rộng (không thay thế, bổ sung thêm)
+
+  Sửa RAGEngine.ask():
+    1. docs = self.retriever.invoke(question)           # retrieval
+    2. if self._neighbor_k > 0:
+         docs = self._expand_with_neighbors(docs)       # neighbor
+    3. if self._use_rerank:
+         top_n = self._rerank_top_n or self._top_k
+         docs = self._reranker.rerank(question, docs, top_n)  # rerank
+    4. context = format_docs(docs)
+    5. answer = self._answer_chain.invoke(...)
+
+  set_retrieval_params(): thêm use_rerank, neighbor_k, rerank_top_n
+
+─────────────────────────────────────────────────────────
+BƯỚC 3.4 — Sửa app.py
+─────────────────────────────────────────────────────────
+  Sidebar — thêm section "🔬 Nâng cao":
+    · st.toggle("Dùng Reranker (BGE-M3)", key="use_rerank")
+    · st.slider("Neighbor context (±chunk)", 0, 3, 0, key="neighbor_k")
+    · Chú thích: "Reranker chậm hơn ~2-3 giây nhưng chính xác hơn"
+
+  Khi load engine: truyền use_rerank, neighbor_k vào load_rag_engine()
+
+  load_rag_engine() function signature: thêm use_rerank, neighbor_k, rerank_top_n
+
+─────────────────────────────────────────────────────────
+BƯỚC 3.5 — Sửa requirements.txt
+─────────────────────────────────────────────────────────
+  Thêm:
+    FlagEmbedding>=1.2.0   # BAAI reranker via FlagEmbedding
+  HOẶC dùng sentence-transformers cross-encoder (nhẹ hơn):
+    # sentence-transformers đã có trong deps qua langchain-huggingface
+    # BGEReranker dùng AutoModelForSequenceClassification (transformers đã có)
+  → Ưu tiên dùng transformers thuần (đã có sẵn) để không thêm dep mới
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHẦN C — THỨ TỰ THỰC HIỆN ĐỀ XUẤT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Bước 1: Nhóm 2 (config mặc định) — nhanh nhất, ít rủi ro, thấy ngay kết quả
+  Bước 2: Nhóm 1 (NFC normalize)  — thay đổi nhỏ, test nhanh
+  Bước 3: Nhóm 3 (reranker)       — phức tạp nhất, cần test kỹ trên collection
+                                    bge_m3__fine__late trước khi bật default
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHẦN D — GHI CHÚ BẢO TRÌ (giữ từ plan cũ)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- Nếu bổ sung thêm category tài liệu trong data/, cần cập nhật
+  SOURCE_CATEGORIES trong config.py để UI filter hiển thị đúng.
+- Nếu bổ sung embed/chunk strategy mới, cần cập nhật cả config +
+  docs + scripts build_all_variants để tránh lệch README/plan.
+- Không tự chạy build_db (theo yêu cầu user).
+- Không tự push git (theo yêu cầu user).

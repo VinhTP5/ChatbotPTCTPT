@@ -30,6 +30,7 @@ ChromaDB chỉ chấp nhận metadata là str / int / float / bool / None. Tất
 
 from __future__ import annotations
 
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -47,6 +48,13 @@ from config import (
     RAW_DOMAIN,
     SUPPORTED_EXTENSIONS,
 )
+
+
+# ── Unicode NFC normalize (chuẩn hóa tiếng Việt) ─────────────────────────────
+
+def _nfc(text: str) -> str:
+    """Chuẩn hóa Unicode NFC để tránh lỗi so sánh ký tự tổ hợp tiếng Việt."""
+    return unicodedata.normalize("NFC", text or "")
 
 
 # ── Loader map (lazy import để tránh phụ thuộc cứng) ─────────────────────────
@@ -218,11 +226,17 @@ def build_chunk_metadata(
 
 def concat_pages_text(pages: list[Document]) -> str:
     """Ghép toàn bộ page_content thành một text duy nhất để xử lý late chunking."""
-    return "\n\n".join((p.page_content or "").strip() for p in pages if (p.page_content or "").strip())
+    parts = []
+    for p in pages:
+        content = _nfc((p.page_content or "").strip())
+        if content:
+            parts.append(content)
+    return "\n\n".join(parts)
 
 
 def split_text_with_spans(text: str, splitter: RecursiveCharacterTextSplitter) -> list[tuple[str, tuple[int, int]]]:
     """Tách text và ánh xạ từng chunk về span ký tự trong văn bản gốc."""
+    text = _nfc(text)
     chunks = splitter.split_text(text)
     spans: list[tuple[str, tuple[int, int]]] = []
     cursor = 0
@@ -298,6 +312,9 @@ def chunk_file(
     ext          = base_meta["file_type"]
 
     for idx, chunk in enumerate(chunks, start=1):
+        # NFC normalize nội dung chunk trước khi gán metadata
+        chunk.page_content = _nfc(chunk.page_content)
+
         # page chỉ tồn tại với PDF — chuẩn hoá thành int hoặc None
         raw_page = chunk.metadata.get("page") if has_page else None
         page_number: Optional[int]

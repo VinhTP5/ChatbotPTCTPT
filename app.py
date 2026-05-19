@@ -19,6 +19,49 @@ import csv
 from io import StringIO
 from pathlib import Path
 
+
+# ---------------------------------------------------------------------------
+# Reassemble chroma.sqlite3 từ các part nếu chưa có (Streamlit Cloud deploy)
+# ---------------------------------------------------------------------------
+def _reassemble_sqlite() -> None:
+    """Ghép chroma.sqlite3 từ các phần .part.NNN nếu file chưa tồn tại."""
+    import hashlib
+
+    db_dir  = Path(__file__).resolve().parent / "chroma_db"
+    sqlite  = db_dir / "chroma.sqlite3"
+
+    if sqlite.exists():
+        return  # đã có, không cần làm gì
+
+    parts = sorted(db_dir.glob("chroma.sqlite3.part.*"))
+    if not parts:
+        return  # không có part, build local thì bình thường
+
+    print(f"[startup] Ghép {len(parts)} phần → chroma.sqlite3 ...", flush=True)
+    with open(sqlite, "wb") as out:
+        for part in parts:
+            out.write(part.read_bytes())
+
+    # Verify MD5 nếu có
+    md5_file = db_dir / "chroma.sqlite3.md5"
+    if md5_file.exists():
+        expected = md5_file.read_text().strip()
+        h = hashlib.md5()
+        with open(sqlite, "rb") as f:
+            for chunk in iter(lambda: f.read(8 * 1024 * 1024), b""):
+                h.update(chunk)
+        if h.hexdigest() != expected:
+            sqlite.unlink()
+            raise RuntimeError("[startup] chroma.sqlite3 bị lỗi checksum — kiểm tra lại các part.")
+        print(f"[startup] ✓ Checksum OK.", flush=True)
+    else:
+        print(f"[startup] ✓ Ghép xong.", flush=True)
+
+
+_reassemble_sqlite()
+# ---------------------------------------------------------------------------
+
+
 # Cho phép import các module trong src/ khi chạy `streamlit run app.py` từ root
 _SRC = Path(__file__).resolve().parent / "src"
 if str(_SRC) not in sys.path:
@@ -36,10 +79,13 @@ from config import (  # noqa: E402
     DEFAULT_FETCH_K,
     DEFAULT_LAMBDA_MULT,
     DEFAULT_MAX_TOKENS,
+    DEFAULT_NEIGHBOR_K,
+    DEFAULT_RERANK_TOP_N,
     DEFAULT_SCORE_THRESHOLD,
     DEFAULT_SEARCH_TYPE,
     DEFAULT_TEMPERATURE,
     DEFAULT_TOP_K,
+    DEFAULT_USE_RERANK,
     EMBED_MODELS,
     MAX_TOP_K,
     MIN_TOP_K,
@@ -141,6 +187,8 @@ _DEFAULTS = {
     "selected_chunk_variant": DEFAULT_CHUNK_VARIANT,
     "selected_chunking_strategy": DEFAULT_CHUNKING_STRATEGY,
     "debug_retrieval": False,
+    "use_rerank"     : DEFAULT_USE_RERANK,
+    "neighbor_k"     : DEFAULT_NEIGHBOR_K,
 }
 for _k, _v in _DEFAULTS.items():
     st.session_state.setdefault(_k, _v)
@@ -376,6 +424,27 @@ with st.sidebar:
         )
         st.session_state.debug_retrieval = debug_retrieval
 
+        st.markdown("**🔬 Reranker & Neighbor**")
+        use_rerank = st.toggle(
+            "Dùng Reranker (BGE-M3)",
+            value=st.session_state.use_rerank,
+            help="Xếp lại chunks theo cross-encoder score. Chính xác hơn nhưng chậm hơn ~2-3 giây.",
+        )
+        st.session_state.use_rerank = use_rerank
+
+        neighbor_k = st.slider(
+            "Neighbor context (±chunk)",
+            min_value=0,
+            max_value=3,
+            value=st.session_state.neighbor_k,
+            step=1,
+            help="Mở rộng context bằng cách lấy thêm chunk liền kề trong cùng tài liệu. 0 = tắt.",
+        )
+        st.session_state.neighbor_k = neighbor_k
+
+        if use_rerank:
+            st.caption("⚠️ Reranker cần ~2-3 giây thêm mỗi câu hỏi và yêu cầu download model lần đầu.")
+
     target_collection = build_collection_name(
         selected_embed_alias,
         selected_chunk_variant,
@@ -405,6 +474,8 @@ with st.sidebar:
                 lambda_mult=lambda_mult,
                 score_threshold=score_threshold if search_type == "similarity_score_threshold" else None,
                 categories=cats_arg_runtime,
+                use_rerank=use_rerank,
+                neighbor_k=neighbor_k,
             )
         except Exception as e:
             st.error(f"Không cập nhật được retrieval: {e}")
@@ -437,6 +508,8 @@ with st.sidebar:
                     chunk_variant = selected_chunk_variant,
                     chunking_strategy = selected_chunking_strategy,
                     categories  = cats_arg,
+                    use_rerank  = use_rerank,
+                    neighbor_k  = neighbor_k,
                 )
                 st.session_state.engine            = engine
                 st.session_state.doc_count         = doc_count
@@ -626,6 +699,35 @@ with source_col:
         )
 
         for i, row in enumerate(rows, start=1):
+            score = row.get("score")
+            score_txt = f"{score:.4f}" if isinstance(score, float) else "n/a"
+            title = f"Chunk {i} · score={score_txt}"
+            with st.expander(title):
+                st.markdown(f"**Tài liệu:** {row.get('document_name')}")
+                st.markdown(
+                    f"- **Trang:** {row.get('page_number')}\n"
+                    f"- **Chunk:** {row.get('chunk_index')}\n"
+                    f"- **Độ dài:** {row.get('char_count')} ký tự"
+                )
+                src = row.get("source_url")
+                if src:
+                    st.markdown(f"[Nguồn]({src})")
+                st.code(row.get("content_preview") or "", language="text")
+
+    st.divider()
+    st.markdown("### ⚡ Hỏi nhanh")
+    quick_questions = [
+        "Điều kiện lên lớp?",
+        "Chương trình GDPT 2018?",
+        "Đánh giá học sinh?",
+        "Môn học bắt buộc THPT?",
+        "Điều kiện tốt nghiệp?",
+    ]
+    for qq in quick_questions:
+        if st.button(qq, key=f"quick_{qq}", use_container_width=True):
+            st.session_state.pending_question = qq
+            st.rerun()
+ start=1):
             score = row.get("score")
             score_txt = f"{score:.4f}" if isinstance(score, float) else "n/a"
             title = f"Chunk {i} · score={score_txt}"
