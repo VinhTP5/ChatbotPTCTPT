@@ -862,7 +862,7 @@ with chat_col:
                 model_after = getattr(st.session_state.engine, "model", model_before)
             st.markdown(answer)
             if model_after != model_before:
-                st.info(f"Da tu dong fallback model: `{model_before}` -> `{model_after}`")
+                st.info(f"⚠️ Đã tự động fallback model: `{model_before}` → `{model_after}`")
                 st.session_state.selected_model = model_after
             if sources:
                 with st.expander(f"📚 {len(sources)} tài liệu tham khảo", expanded=False):
