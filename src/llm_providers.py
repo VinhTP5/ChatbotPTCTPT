@@ -39,6 +39,59 @@ class NoProviderConfiguredError(RuntimeError):
     """Không tìm thấy bất kỳ API key nào trong env/secrets."""
 
 
+def _normalize_error_text(err: Exception) -> str:
+    """Chuẩn hóa text lỗi để match pattern ổn định giữa các provider."""
+    return str(err).strip().lower()
+
+
+def is_model_access_error(err: Exception) -> bool:
+    """True nếu lỗi cho thấy model không tồn tại hoặc không được cấp quyền."""
+    msg = _normalize_error_text(err)
+    patterns = [
+        "model not found",
+        "does not exist",
+        "does not have access",
+        "not have access",
+        "permission",
+        "access denied",
+        "forbidden",
+        "unsupported model",
+        "not supported for",
+        "is not found for api version",
+        "invalid model",
+        "unknown model",
+    ]
+    return any(p in msg for p in patterns)
+
+
+def list_fallback_models(provider: str, current_model: str) -> list[str]:
+    """Danh sách model fallback theo thứ tự ổn định cho 1 provider.
+
+    Luôn bỏ current_model khỏi danh sách fallback để tránh lặp.
+    """
+    info = PROVIDERS[provider]
+    models = list(info["models"].keys())
+    default_model = info.get("default")
+
+    ordered: list[str] = []
+
+    # 1) Ưu tiên model sau model hiện tại trong catalog
+    if current_model in models:
+        idx = models.index(current_model)
+        ordered.extend(models[idx + 1 :])
+
+    # 2) Sau đó thử default nếu chưa có và không trùng current
+    if default_model and default_model != current_model and default_model not in ordered:
+        ordered.append(default_model)
+
+    # 3) Cuối cùng là toàn bộ model còn lại theo thứ tự catalog
+    for model_name in models:
+        if model_name != current_model and model_name not in ordered:
+            ordered.append(model_name)
+
+    return ordered
+
+
 # ── Factory cho từng provider ────────────────────────────────────────────────
 
 def _build_groq(model: str, api_key: str, temperature: float, max_tokens: int):

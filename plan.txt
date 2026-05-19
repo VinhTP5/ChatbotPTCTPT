@@ -97,7 +97,9 @@ PHẦN D — VIỆC CẦN LÀM (TODO)
     ├─ [x] Sidebar cấu hình mặc định ẩn (collapsed), click để mở
     ├─ [x] Phần "Nguồn gần nhất" thu gọn mặc định (accordion), hiển thị ngắn hơn
     ├─ [x] Bỏ phần "Hỏi nhanh" (quick questions)
-    └─ [x] Nâng cấp UI/CSS: gradient header, card style hiện đại, font Inter, chip trạng thái
+    ├─ [x] Nâng cấp UI/CSS: gradient header, card style hiện đại, font Inter, chip trạng thái
+    └─ [x] Tinh chỉnh theo phong cách chatbot hiện đại (gần ChatGPT/Claude),
+        tông lệnh xanh dương, luồng chat tập trung và tối ưu trải nghiệm hỏi đáp
 
 [ ] Bổ sung tài liệu nguồn
     ├─ Thêm các Quyết định mới của FPT/FSC khi ban hành
@@ -112,8 +114,12 @@ PHẦN D — VIỆC CẦN LÀM (TODO)
 [ ] Cải thiện deploy
     ├─ [x] Cache runtime cho embedding model + Chroma vectorstore + collection listing
     │      để giảm warm-up lặp lại trên cùng một runtime/session
-    └─ [ ] Tiếp tục tối ưu cold start lần đầu khi model embedding lớn chưa được tải
-
+  ├─ [ ] Tiếp tục tối ưu cold start lần đầu khi model embedding lớn chưa được tải
+  │      để giảm warm-up lặp lại trên cùng một runtime/session
+  ├─ [x] Sử dụng các model tiên tiến và mới hơn qua API key,
+  │      ví dụ GPT-5.x, Claude Sonnet 4.x, Gemini 3.x, ...
+  └─ [x] Tự fallback model khi model ưu tiên không có quyền truy cập,
+      tự chuyển sang model ổn định kế tiếp cùng provider
 [ ] Tính năng nâng cao (dài hạn)
     ├─ Multi-turn context: nhớ hội thoại để hỏi tiếp ngữ cảnh
     ├─ Export hội thoại (PDF / CSV)

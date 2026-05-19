@@ -52,6 +52,8 @@ from llm_providers import (
     NoProviderConfiguredError,
     ProviderUnavailableError,
     build_llm,
+    is_model_access_error,
+    list_fallback_models,
     resolve_model,
     resolve_provider,
 )
@@ -318,6 +320,8 @@ class RAGEngine:
         # 3) Provider & LLM
         self.provider = resolve_provider(provider)
         self.model    = resolve_model(self.provider, model)
+        self._temperature = temperature
+        self._max_tokens = max_tokens
         self.llm = build_llm(
             provider    = self.provider,
             model       = self.model,
@@ -337,6 +341,42 @@ class RAGEngine:
             ),
         ])
         self._answer_chain = self.prompt | self.llm | StrOutputParser()
+
+    def _rebuild_llm_with_model(self, model_name: str) -> None:
+        """Rebuild LLM + chain với model mới trên cùng provider."""
+        self.llm = build_llm(
+            provider=self.provider,
+            model=model_name,
+            temperature=self._temperature,
+            max_tokens=self._max_tokens,
+        )
+        self.model = model_name
+        self._answer_chain = self.prompt | self.llm | StrOutputParser()
+
+    def _fallback_and_retry_answer(self, question: str, context: str, first_error: Exception) -> str:
+        """Tự động fallback model khi model hiện tại không có quyền truy cập."""
+        if not is_model_access_error(first_error):
+            raise first_error
+
+        attempted = [self.model]
+        for candidate in list_fallback_models(self.provider, self.model):
+            try:
+                logger.warning(
+                    "[RAGEngine] Model '%s' khong truy cap duoc, fallback sang '%s'",
+                    attempted[-1],
+                    candidate,
+                )
+                self._rebuild_llm_with_model(candidate)
+                return self._answer_chain.invoke({"input": question, "context": context})
+            except Exception as err:
+                attempted.append(candidate)
+                if not is_model_access_error(err):
+                    raise err
+
+        attempted_str = ", ".join(attempted)
+        raise ProviderUnavailableError(
+            f"Khong model nao truy cap duoc voi provider '{self.provider}'. Da thu: {attempted_str}."
+        ) from first_error
 
     # ── Reranker & Neighbor helpers ──────────────────────────────────────────
 
@@ -599,7 +639,10 @@ class RAGEngine:
             docs = self._reranker.rerank(question, docs, top_n=top_n)
         # 5) Format context → LLM
         context = format_docs(docs)
-        answer  = self._answer_chain.invoke({"input": question, "context": context})
+        try:
+            answer = self._answer_chain.invoke({"input": question, "context": context})
+        except Exception as err:
+            answer = self._fallback_and_retry_answer(question, context, err)
         sources = get_unique_sources(docs)
         return RAGResult(answer=answer, sources=sources, docs=docs)
 

@@ -112,19 +112,61 @@ st.set_page_config(
 st.markdown(
     """
 <style>
+    :root {
+        --cmd-blue-900: #0a1f44;
+        --cmd-blue-800: #123a7a;
+        --cmd-blue-700: #1d4ed8;
+        --cmd-blue-600: #2563eb;
+        --cmd-blue-500: #3b82f6;
+        --cmd-blue-100: #dbeafe;
+        --cmd-blue-050: #eff6ff;
+        --ink-900: #0f172a;
+        --ink-700: #334155;
+        --ink-500: #64748b;
+        --line-200: #e2e8f0;
+        --line-100: #eef2f7;
+        --surface: #ffffff;
+    }
+
     /* ── Google Font ── */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
+    .stApp {
+        background:
+          radial-gradient(circle at 10% -10%, rgba(37,99,235,0.16), transparent 35%),
+          radial-gradient(circle at 90% 0%, rgba(56,189,248,0.14), transparent 30%),
+          linear-gradient(180deg, #f5f9ff 0%, #f8fbff 36%, #ffffff 100%);
+    }
+    .stApp::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+        background-size: 24px 24px;
+        mask-image: radial-gradient(circle at center, black 50%, transparent 90%);
+        z-index: 0;
+    }
+
+    .block-container {
+        max-width: 1240px;
+        padding-top: 1.2rem;
+        position: relative;
+        z-index: 1;
+    }
+
     /* ── Header ── */
     .main-header {
-        background: linear-gradient(135deg, #0f2744 0%, #1a4a8a 60%, #2563eb 100%);
+        background: linear-gradient(135deg, var(--cmd-blue-900) 0%, var(--cmd-blue-800) 48%, var(--cmd-blue-600) 100%);
         color: white;
-        padding: 1.2rem 2rem;
-        border-radius: 16px;
+        padding: 1.15rem 1.8rem;
+        border-radius: 18px;
         margin-bottom: 1rem;
         text-align: center;
-        box-shadow: 0 4px 24px rgba(37,99,235,0.18);
+        box-shadow: 0 10px 30px rgba(13, 74, 166, 0.24);
         position: relative;
         overflow: hidden;
     }
@@ -143,44 +185,65 @@ st.markdown(
         display: inline-block;
         background: rgba(255,255,255,0.15);
         border: 1px solid rgba(255,255,255,0.25);
-        border-radius: 20px;
-        padding: 0.15rem 0.75rem;
+        border-radius: 999px;
+        padding: 0.2rem 0.8rem;
         font-size: 0.75rem;
         margin-top: 0.5rem;
     }
 
-    /* ── Chat messages ── */
+    /* ── Khu vực chat trung tâm ── */
+    .chat-shell {
+        border: 1px solid var(--line-200);
+        border-radius: 18px;
+        background: rgba(255,255,255,0.88);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08);
+        padding: 0.85rem;
+        margin-bottom: 0.65rem;
+    }
+
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stChatMessage-user"]),
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stChatMessage-assistant"]) {
+        width: 100%;
+    }
+
     .stChatMessage {
-        border-radius: 14px !important;
-        margin-bottom: 0.5rem !important;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.06) !important;
+        border-radius: 18px !important;
+        margin-bottom: 0.6rem !important;
+        box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06) !important;
+        padding-top: 0.2rem !important;
+        padding-bottom: 0.2rem !important;
     }
     [data-testid="stChatMessage-user"] {
-        background: linear-gradient(135deg, #eff6ff, #dbeafe) !important;
+        background: linear-gradient(135deg, var(--cmd-blue-050), var(--cmd-blue-100)) !important;
         border: 1px solid #bfdbfe !important;
     }
     [data-testid="stChatMessage-assistant"] {
-        background: #ffffff !important;
-        border: 1px solid #e5e7eb !important;
+        background: var(--surface) !important;
+        border: 1px solid var(--line-100) !important;
     }
 
     /* ── Chat input ── */
     [data-testid="stChatInput"] > div {
-        border-radius: 14px !important;
-        border: 2px solid #2563eb !important;
-        box-shadow: 0 2px 12px rgba(37,99,235,0.10) !important;
+        border-radius: 16px !important;
+        border: 2px solid var(--cmd-blue-600) !important;
+        background: #ffffff !important;
+        box-shadow: 0 6px 22px rgba(37,99,235,0.14) !important;
         transition: box-shadow 0.2s;
     }
     [data-testid="stChatInput"] > div:focus-within {
-        box-shadow: 0 4px 20px rgba(37,99,235,0.20) !important;
+        box-shadow: 0 10px 26px rgba(37,99,235,0.24) !important;
+    }
+    [data-testid="stChatInput"] textarea {
+        font-size: 0.95rem !important;
     }
 
     /* ── Source card (cột phải) ── */
     .src-card {
         background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-left: 3px solid #2563eb;
-        border-radius: 10px;
+        border: 1px solid var(--line-200);
+        border-left: 3px solid var(--cmd-blue-600);
+        border-radius: 12px;
         padding: 0.55rem 0.75rem;
         margin-bottom: 0.4rem;
         font-size: 0.82rem;
@@ -192,13 +255,13 @@ st.markdown(
         font-weight: 600; color: #1e3a8a; font-size: 0.82rem; line-height: 1.3;
     }
     .src-card .src-meta { color: #64748b; font-size: 0.73rem; margin-top: 0.15rem; }
-    .src-card a { color: #2563eb; text-decoration: none; }
+    .src-card a { color: var(--cmd-blue-600); text-decoration: none; }
     .src-card a:hover { text-decoration: underline; }
 
     /* ── Source badge trong chat ── */
     .source-item {
-        background: #f0f7ff;
-        border: 1px solid #bfdbfe;
+        background: #f2f8ff;
+        border: 1px solid #c7dcff;
         border-radius: 8px;
         padding: 0.4rem 0.65rem;
         margin: 0.2rem 0;
@@ -209,8 +272,15 @@ st.markdown(
     /* ── Stat chip ── */
     .stat-chip {
         display: inline-flex; align-items: center; gap: 0.3rem;
-        background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 20px;
-        padding: 0.2rem 0.7rem; font-size: 0.78rem; color: #475569; font-weight: 500;
+        background: #f8fbff; border: 1px solid #dbeafe; border-radius: 999px;
+        padding: 0.2rem 0.7rem; font-size: 0.78rem; color: #1e3a8a; font-weight: 600;
+    }
+
+    .rail-panel {
+        border: 1px solid var(--line-200);
+        border-radius: 14px;
+        background: rgba(255,255,255,0.9);
+        padding: 0.8rem;
     }
 
     /* ── Status badge ── */
@@ -229,7 +299,7 @@ st.markdown(
 
     /* ── Welcome cards ── */
     .welcome-card {
-        background: linear-gradient(135deg, #f8faff, #eff6ff);
+        background: linear-gradient(135deg, #f7fbff, #eef5ff);
         border: 1px solid #dbeafe; border-radius: 14px;
         padding: 1.1rem 1.2rem; text-align: center;
     }
@@ -254,7 +324,7 @@ st.markdown(
     }
 
     /* ── Misc ── */
-    .stSpinner > div { border-top-color: #2563eb !important; }
+    .stSpinner > div { border-top-color: var(--cmd-blue-600) !important; }
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #f1f5f9; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
@@ -723,6 +793,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+st.markdown('<div class="chat-shell">', unsafe_allow_html=True)
+
 # ── Màn hình chào (chỉ hiện khi chưa sẵn sàng) ───────────────────────────────
 if not st.session_state.model_loaded:
     col1, col2, col3 = st.columns(3)
@@ -755,6 +827,7 @@ if not st.session_state.model_loaded:
     for i, ex in enumerate(examples):
         with ex_cols[i % 2]:
             st.markdown(f"- *{ex}*")
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 
@@ -781,11 +854,16 @@ with chat_col:
 
         with st.chat_message("assistant"):
             with st.spinner("🔍 Đang phân tích tài liệu..."):
+                model_before = getattr(st.session_state.engine, "model", st.session_state.selected_model)
                 answer, sources, docs_with_scores = _answer(
                     question,
                     debug_retrieval=st.session_state.debug_retrieval,
                 )
+                model_after = getattr(st.session_state.engine, "model", model_before)
             st.markdown(answer)
+            if model_after != model_before:
+                st.info(f"Da tu dong fallback model: `{model_before}` -> `{model_after}`")
+                st.session_state.selected_model = model_after
             if sources:
                 with st.expander(f"📚 {len(sources)} tài liệu tham khảo", expanded=False):
                     for src in sources:
@@ -803,6 +881,7 @@ with chat_col:
 
 # ── Cột phải: trạng thái + nguồn gần nhất (thu gọn) ─────────────────────────
 with source_col:
+    st.markdown('<div class="rail-panel">', unsafe_allow_html=True)
     if st.session_state.model_loaded:
         prov_short = PROVIDERS[st.session_state.selected_provider]["label"]
         st.markdown(
@@ -851,3 +930,6 @@ with source_col:
                     if row.get("source_url"):
                         st.markdown(f"[Nguồn]({row['source_url']})")
                     st.code(row.get("content_preview") or "", language="text")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
