@@ -166,7 +166,7 @@ Mở trình duyệt tại http://localhost:8501. Trong sidebar:
 4. **🧩 Chunk variant + strategy** — chỉ hiện những combo đã build
 5. **📚 Nguồn tài liệu** — checkbox FPT / Bộ GD (bỏ chọn để giảm vector phải duyệt)
 6. **⚙️ Nâng cao** — search_type (similarity/MMR/score_threshold), fetch_k, lambda_mult, score_threshold, temperature, max_tokens, **🔍 debug retrieval toggle**
-7. Bấm **🚀 Khởi động Chatbot** → đặt câu hỏi
+7. Chatbot sẽ **tự khởi động** nếu có provider và collection hợp lệ; dùng nút **🚀 Khởi động** hoặc **🔄 Khởi động lại** khi muốn nạp lại cấu hình thủ công
 
 ---
 

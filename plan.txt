@@ -1,216 +1,150 @@
-
-╔══════════════════════════════════════════════════════════════════════════════╗
-║            PLAN HOÀN CHỈNH — ChatbotPTCTPT  (cập nhật 2026-05-19)         ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PHẦN A — ĐÃ HOÀN THÀNH (không cần làm gì thêm)
+CHATBOT PTCT PT — KẾ HOẠCH DỰ ÁN
+Cập nhật: 2026-05-19
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-[DONE] Không tự chạy build_db (theo yêu cầu user)
-[DONE] Không tự push git (theo yêu cầu user)
 
-[DONE] Sync thông minh — không rebuild toàn bộ DB
-       → mode_sync() trong src/build_db.py đã so sánh registry <> disk:
-         · File xóa khỏi data/ → xóa chunks tương ứng trong Chroma
-         · File mới → index bổ sung
-         · File sửa (mtime khác) → xóa chunk cũ, index lại
-         · File không đổi → bỏ qua
-       → Mỗi combination có file registry riêng:
-         chroma_db/indexed_files__{embed}__{variant}__{strategy}.json
+═══════════════════════════════════════════════════════════════════════════════
+PHẦN A — TỔNG QUAN DỰ ÁN
+═══════════════════════════════════════════════════════════════════════════════
 
-[DONE] Không chunking .doc, .html, .csv, .htm, .md
-       → SUPPORTED_EXTENSIONS trong config.py chỉ gồm:
-         .pdf .docx .xlsx .xls .pptx .ppt .txt
-       → document_loader.py chỉ có loader cho các ext trên
+Mục tiêu
+--------
+Chatbot RAG (Retrieval-Augmented Generation) hỏi-đáp về Chương trình Giáo dục
+Phổ thông (PTCT PT), dựa trên:
+  · Văn bản nội bộ FPT/FSC (Quyết định, Kế hoạch, Hướng dẫn) — thư mục data/QD/
+  · Văn bản Nhà nước (Thông tư 32/2018, CT GDPT 2018, 27 môn học) — thư mục data/TT32_2018/
 
-[DONE] Chia nhỏ chroma.sqlite3 thành file < 50MB
-       → scripts/split_db.py: chia 48MB/part, ghi MD5 checksum
-       → app.py._reassemble_sqlite(): tự ghép lại khi deploy trên
-         Streamlit Cloud (giữ nguyên file gốc trên máy dev)
+Stack chính
+-----------
+  · Frontend  : Streamlit (app.py)
+  · RAG engine: LangChain + ChromaDB (src/)
+  · Embedding : BGE-M3 (BAAI/bge-m3) — mặc định; hỗ trợ MiniLM, MPNet, E5
+  · LLM       : đa provider — Groq, OpenAI, Anthropic, Google Gemini, DeepSeek
+  · Chunking  : Late Chunking / Long Late Chunking / Standard
+  · Reranker  : BGE-Reranker-v2-m3 (opt-in)
+  · Deploy    : Streamlit Cloud (chroma_db được split thành .part.NNN + md5)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PHẦN B — CẦN LÀM — 3 NHÓM THEO ĐỘ PHỨC TẠP
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-══════════════════════════════════════════════════════════
-NHÓM 1 — UNICODE NFC NORMALIZE  (đơn giản, rủi ro thấp)
-══════════════════════════════════════════════════════════
-Mục tiêu: chuẩn hóa tiếng Việt (NFC) trước khi split và embed
-để tránh lỗi so sánh ký tự tổ hợp (ổ ≠ ổ khi dùng 2 codepoint).
+═══════════════════════════════════════════════════════════════════════════════
+PHẦN B — CẤU TRÚC THƯ MỤC
+═══════════════════════════════════════════════════════════════════════════════
 
-Files cần sửa:
-┌─────────────────────────────────────────────────────────┐
-│  src/document_loader.py                                 │
-├─────────────────────────────────────────────────────────┤
-│  1. Thêm import unicodedata ở đầu file                  │
-│  2. Thêm hàm trợ giúp:                                  │
-│       def _nfc(text: str) -> str:                       │
-│           return unicodedata.normalize("NFC", text or "")│
-│  3. concat_pages_text(): áp dụng _nfc cho page_content  │
-│     trước khi join:                                      │
-│       content = _nfc((p.page_content or "").strip())    │
-│  4. chunk_file(): gọi _nfc(chunk.page_content) trên     │
-│     mỗi chunk SAU KHI split nhưng TRƯỚC khi gán metadata│
-│  5. split_text_with_spans(): gọi _nfc(text) ở đầu hàm  │
-└─────────────────────────────────────────────────────────┘
-┌─────────────────────────────────────────────────────────┐
-│  src/rag_engine.py                                      │
-├─────────────────────────────────────────────────────────┤
-│  6. Trong RAGEngine.ask(): normalize câu hỏi đầu vào   │
-│       question = unicodedata.normalize("NFC", question) │
-└─────────────────────────────────────────────────────────┘
+ChatbotPTCTPT/
+├── app.py                    ← Streamlit UI chính
+├── requirements.txt
+├── .env / .env.example       ← API keys (KHÔNG commit .env)
+├── plan.txt                  ← File này
+│
+├── src/                      ← Logic lõi
+│   ├── config.py             ← Cấu hình tập trung (provider, model, path, chunking)
+│   ├── rag_engine.py         ← RAG pipeline (load vectorstore, build chain)
+│   ├── llm_providers.py      ← Factory đa LLM provider
+│   ├── document_loader.py    ← Load & parse tài liệu (PDF, DOCX, XLSX, PPTX, TXT)
+│   ├── build_db.py           ← Build / rebuild ChromaDB collection
+│   ├── late_chunking.py      ← Late Chunking & Long Late Chunking
+│   └── reranker.py           ← BGE Reranker
+│
+├── data/
+│   ├── QD/                   ← Quyết định, KHGD nội bộ FPT/FSC
+│   │   └── PTCT-PT_QĐ 2025/  ← Quyết định mới 2025-2026
+│   └── TT32_2018/            ← CT GDPT 2018 — TT32 + 27 môn học (DOCX)
+│
+├── chroma_db/                ← Vector DB (không commit trực tiếp, dùng LFS/part)
+│   ├── chroma.sqlite3.part.* ← Split để deploy Streamlit Cloud
+│   ├── chroma.sqlite3.md5    ← Checksum
+│   └── indexed_files.json    ← Registry file đã index
+│
+├── scripts/                  ← Tiện ích build & git
+│   ├── build_all_variants.sh / .cmd
+│   ├── build_db.sh / .cmd
+│   ├── db_status.sh / .cmd
+│   ├── deploy.sh / .cmd
+│   ├── git_*.sh / .cmd       ← Wrapper git (ko tự chạy)
+│   └── split_db.py           ← Split chroma.sqlite3 thành part
+│
+└── docs/                     ← Tài liệu nội bộ dự án
 
-Ghi chú: late_chunking.py không cần sửa vì nhận text đã normalize
-từ concat_pages_text(). Query trong embed_query() được normalize
-qua ask() trước khi gọi retriever.
 
-LƯU Ý QUAN TRỌNG: Sau khi sửa xong, các collection cũ trong
-chroma_db có thể bị lệch Unicode với chunk mới. Nếu muốn
-nhất quán hoàn toàn, cần rebuild collection đang dùng
-(bge_m3__fine__late). Tuy nhiên trong thực tế ảnh hưởng nhỏ
-vì retrieval dùng cosine similarity — chỉ ảnh hưởng exact match.
-→ Quyết định: KHÔNG rebuild ngay, chỉ áp dụng từ lần index mới.
+═══════════════════════════════════════════════════════════════════════════════
+PHẦN C — TÍNH NĂNG ĐÃ HOÀN THÀNH
+═══════════════════════════════════════════════════════════════════════════════
 
-══════════════════════════════════════════════════════════
-NHÓM 2 — CẤU HÌNH MẶC ĐỊNH  (đơn giản, thay đổi config)
-══════════════════════════════════════════════════════════
-Mục tiêu: đổi default stack thành openai-4o + bge-m3 + fine + late + mmr
-(thay cho minilm + coarse + standard + mmr hiện tại).
+[x] RAG pipeline hoàn chỉnh (retrieve → rerank → generate)
+[x] Đa LLM provider: Groq, OpenAI, Anthropic, Google Gemini, DeepSeek
+[x] Embedding đa model: BGE-M3, E5, MPNet, MiniLM (chọn qua sidebar)
+[x] 3 chiến lược chunking: Standard, Late Chunking, Long Late Chunking
+[x] 3 chunk variant: Fine (256/128), Balanced (800/200), Coarse (1000/150)
+[x] MMR search với fetch_k & lambda_mult tuỳ chỉnh
+[x] Reranker BGE-v2-m3 (opt-in, slider top_n)
+[x] Neighbor context expand (±K chunk xung quanh)
+[x] Source citation với link GitHub blob + raw URL
+[x] Filter nguồn: FPT/FSC (QD) vs Bộ GD (TT32_2018)
+[x] Debug retrieval (hiển thị score, chunk content)
+[x] Split chroma.sqlite3 → .part.NNN để deploy Streamlit Cloud
+[x] Tự động reassemble chroma khi khởi động (không cần build lại)
+[x] System prompt V2: trích dẫn nguồn, trích nguyên văn, phát hiện mâu thuẫn
 
-Files cần sửa:
-┌─────────────────────────────────────────────────────────┐
-│  src/config.py                                          │
-├─────────────────────────────────────────────────────────┤
-│  Dòng 65: DEFAULT_EMBED_ALIAS = "minilm"                │
-│    → đổi thành: DEFAULT_EMBED_ALIAS = "bge_m3"          │
-│                                                         │
-│  Dòng 87: DEFAULT_CHUNK_VARIANT = "coarse"              │
-│    → đổi thành: DEFAULT_CHUNK_VARIANT = "fine"          │
-│                                                         │
-│  Dòng 94: DEFAULT_CHUNKING_STRATEGY = "standard"        │
-│    → đổi thành: DEFAULT_CHUNKING_STRATEGY = "late"      │
-│                                                         │
-│  Dòng 258-262: DEFAULT_PROVIDER_ORDER                   │
-│    → đảm bảo "openai" nằm đầu danh sách fallback:      │
-│      DEFAULT_PROVIDER_ORDER = [                         │
-│          os.getenv("CHATBOT_DEFAULT_PROVIDER","").strip().lower(),│
-│          "openai", "groq", "anthropic", "google", "deepseek",│
-│      ]                                                  │
-│    (chỉ thay đổi thứ tự — openai lên đầu thay groq)    │
-│                                                         │
-│  DEFAULT_SEARCH_TYPE = "mmr" ← ĐÃ ĐÚNG, không cần đổi │
-└─────────────────────────────────────────────────────────┘
 
-Tác động UI (app.py): không cần sửa code app.py — UI đọc
-DEFAULT_* từ config.py, sẽ tự hiển thị bge_m3 + fine + late
-là lựa chọn mặc định. Collection bge_m3__fine__late đã có
-60 file indexed.
+═══════════════════════════════════════════════════════════════════════════════
+PHẦN D — VIỆC CẦN LÀM (TODO)
+═══════════════════════════════════════════════════════════════════════════════
 
-══════════════════════════════════════════════════════════
-NHÓM 3 — NEIGHBOR + RERANK  (phức tạp nhất, cần test kỹ)
-══════════════════════════════════════════════════════════
-Mục tiêu: bổ sung 2 kỹ thuật nâng cao sau retrieval:
-  (a) Neighbor expansion: mở rộng context bằng cách lấy thêm
-      chunk liền kề (chunk_index ± neighbor_k) trong cùng tài liệu
-  (b) Reranker: dùng BAAI/bge-reranker-v2-m3 để xếp lại thứ tự
-      chunks theo relevance thực sự (cross-encoder, chính xác hơn
-      cosine similarity)
+[x] UI — Refine giao diện (đã triển khai trong app.py)
+    ├─ [x] Chuyển layout thành chatbot-first: box nhập ở cuối màn hình,
+    │      lịch sử hội thoại hiển thị phía trên theo luồng chat
+    ├─ [x] Chatbot tự động khởi động khi vào trang nếu provider + collection sẵn sàng
+    ├─ [x] Sidebar cấu hình mặc định ẩn (collapsed), click để mở
+    ├─ [x] Phần "Nguồn gần nhất" thu gọn mặc định (accordion), hiển thị ngắn hơn
+    ├─ [x] Bỏ phần "Hỏi nhanh" (quick questions)
+    └─ [x] Nâng cấp UI/CSS: gradient header, card style hiện đại, font Inter, chip trạng thái
 
-─────────────────────────────────────────────────────────
-BƯỚC 3.1 — Tạo src/reranker.py (file mới)
-─────────────────────────────────────────────────────────
-  Class BGEReranker:
-    __init__(model_name="BAAI/bge-reranker-v2-m3", device=None)
-      · Load AutoTokenizer + AutoModelForSequenceClassification
-      · Fallback gracefully nếu model chưa download
+[ ] Bổ sung tài liệu nguồn
+    ├─ Thêm các Quyết định mới của FPT/FSC khi ban hành
+    ├─ Cập nhật nếu Bộ GD sửa đổi CT GDPT 2018
+    └─ Rebuild DB sau mỗi lần bổ sung tài liệu
 
-    rerank(query: str, docs: list[Document], top_n: int) -> list[Document]
-      · Tạo pairs [(query, doc.page_content), ...]
-      · Tokenize batch → forward pass → sigmoid score
-      · Sắp xếp giảm dần theo score
-      · Trả về top_n docs đã rerank
+[ ] Cải thiện chất lượng RAG
+    ├─ Thử nghiệm Hybrid Search (BM25 + dense)
+    ├─ Query expansion / HyDE (Hypothetical Document Embedding)
+    └─ Đánh giá RAGAS để đo recall & faithfulness
 
-    Xử lý batch lớn: chia thành sub-batches 32 items/batch
-    để tránh OOM khi docs nhiều.
+[ ] Cải thiện deploy
+    ├─ [x] Cache runtime cho embedding model + Chroma vectorstore + collection listing
+    │      để giảm warm-up lặp lại trên cùng một runtime/session
+    └─ [ ] Tiếp tục tối ưu cold start lần đầu khi model embedding lớn chưa được tải
 
-  Hàm module-level:
-    get_reranker(model_name=...) -> BGEReranker (singleton/cache)
+[ ] Tính năng nâng cao (dài hạn)
+    ├─ Multi-turn context: nhớ hội thoại để hỏi tiếp ngữ cảnh
+    ├─ Export hội thoại (PDF / CSV)
+    └─ Analytics: thống kê câu hỏi phổ biến
 
-─────────────────────────────────────────────────────────
-BƯỚC 3.2 — Sửa src/config.py
-─────────────────────────────────────────────────────────
-  Thêm vào cuối phần Retrieval:
-    RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
-    DEFAULT_USE_RERANK = False          # opt-in, không bắt buộc
-    DEFAULT_NEIGHBOR_K = 0              # 0 = tắt, 1 = lấy ±1 chunk
-    DEFAULT_RERANK_TOP_N = None         # None = bằng top_k
 
-─────────────────────────────────────────────────────────
-BƯỚC 3.3 — Sửa src/rag_engine.py
-─────────────────────────────────────────────────────────
-  RAGEngine.__init__():
-    + Thêm params: use_rerank=False, neighbor_k=0, rerank_top_n=None
-    + Nếu use_rerank=True: khởi tạo BGEReranker (lazy load)
-    + Lưu self._use_rerank, self._neighbor_k, self._rerank_top_n
+═══════════════════════════════════════════════════════════════════════════════
+PHẦN E — GHI CHÚ BẢO TRÌ
+═══════════════════════════════════════════════════════════════════════════════
 
-  Thêm method _expand_with_neighbors(docs):
-    · Với mỗi doc, đọc chunk_index và document_name từ metadata
-    · Query Chroma với where filter = {document_name: X} để lấy
-      chunk_index trong khoảng [idx-neighbor_k, idx+neighbor_k]
-    · Deduplicate theo chunk_index, giữ thứ tự ban đầu
-    · Trả về docs mở rộng (không thay thế, bổ sung thêm)
+· Bổ sung category tài liệu trong data/ → cập nhật SOURCE_CATEGORIES trong config.py
+· Bổ sung embed/chunk strategy → cập nhật config + docs + scripts build_all_variants
+· KHÔNG tự chạy build_db (theo yêu cầu)
+· KHÔNG tự push git (theo yêu cầu)
+· API key đọc từ .env / Streamlit Secrets — KHÔNG hard-code
+· Collection name = {embed_alias}__{chunk_variant}__{chunking_strategy}
+  Ví dụ: bge_m3__fine__late
 
-  Sửa RAGEngine.ask():
-    1. docs = self.retriever.invoke(question)           # retrieval
-    2. if self._neighbor_k > 0:
-         docs = self._expand_with_neighbors(docs)       # neighbor
-    3. if self._use_rerank:
-         top_n = self._rerank_top_n or self._top_k
-         docs = self._reranker.rerank(question, docs, top_n)  # rerank
-    4. context = format_docs(docs)
-    5. answer = self._answer_chain.invoke(...)
 
-  set_retrieval_params(): thêm use_rerank, neighbor_k, rerank_top_n
+═══════════════════════════════════════════════════════════════════════════════
+PHẦN F — BIẾN MÔI TRƯỜNG
+═══════════════════════════════════════════════════════════════════════════════
 
-─────────────────────────────────────────────────────────
-BƯỚC 3.4 — Sửa app.py
-─────────────────────────────────────────────────────────
-  Sidebar — thêm section "🔬 Nâng cao":
-    · st.toggle("Dùng Reranker (BGE-M3)", key="use_rerank")
-    · st.slider("Neighbor context (±chunk)", 0, 3, 0, key="neighbor_k")
-    · Chú thích: "Reranker chậm hơn ~2-3 giây nhưng chính xác hơn"
+GROQ_API_KEY          → Groq (LLaMA 3.3 70B, LLaMA 3.1 8B, Gemma2, Mixtral)
+OPENAI_API_KEY        → OpenAI (GPT-4o, GPT-4o-mini, GPT-4-turbo)
+ANTHROPIC_API_KEY     → Anthropic Claude (Sonnet, Haiku, Opus)
+GOOGLE_API_KEY        → Google Gemini (1.5 Pro, 1.5 Flash, 2.0 Flash)
+DEEPSEEK_API_KEY      → DeepSeek (V3, R1)
 
-  Khi load engine: truyền use_rerank, neighbor_k vào load_rag_engine()
-
-  load_rag_engine() function signature: thêm use_rerank, neighbor_k, rerank_top_n
-
-─────────────────────────────────────────────────────────
-BƯỚC 3.5 — Sửa requirements.txt
-─────────────────────────────────────────────────────────
-  Thêm:
-    FlagEmbedding>=1.2.0   # BAAI reranker via FlagEmbedding
-  HOẶC dùng sentence-transformers cross-encoder (nhẹ hơn):
-    # sentence-transformers đã có trong deps qua langchain-huggingface
-    # BGEReranker dùng AutoModelForSequenceClassification (transformers đã có)
-  → Ưu tiên dùng transformers thuần (đã có sẵn) để không thêm dep mới
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PHẦN C — THỨ TỰ THỰC HIỆN ĐỀ XUẤT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Bước 1: Nhóm 2 (config mặc định) — nhanh nhất, ít rủi ro, thấy ngay kết quả
-  Bước 2: Nhóm 1 (NFC normalize)  — thay đổi nhỏ, test nhanh
-  Bước 3: Nhóm 3 (reranker)       — phức tạp nhất, cần test kỹ trên collection
-                                    bge_m3__fine__late trước khi bật default
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PHẦN D — GHI CHÚ BẢO TRÌ (giữ từ plan cũ)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-- Nếu bổ sung thêm category tài liệu trong data/, cần cập nhật
-  SOURCE_CATEGORIES trong config.py để UI filter hiển thị đúng.
-- Nếu bổ sung embed/chunk strategy mới, cần cập nhật cả config +
-  docs + scripts build_all_variants để tránh lệch README/plan.
-- Không tự chạy build_db (theo yêu cầu user).
-- Không tự push git (theo yêu cầu user).
+CHATBOT_DEFAULT_PROVIDER  → Override provider mặc định (groq/openai/anthropic/...)
+CHATBOT_GH_OWNER          → GitHub owner (mặc định: VinhTP5)
+CHATBOT_GH_REPO           → GitHub repo (mặc định: ChatbotPTCTPT)
+CHATBOT_GH_BRANCH         → Branch (mặc định: main)
+CHATBOT_GH_DATA_PREFIX    → Prefix thư mục data trên GitHub (mặc định: data)

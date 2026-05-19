@@ -31,18 +31,17 @@ def _reassemble_sqlite() -> None:
     sqlite  = db_dir / "chroma.sqlite3"
 
     if sqlite.exists():
-        return  # đã có, không cần làm gì
+        return
 
     parts = sorted(db_dir.glob("chroma.sqlite3.part.*"))
     if not parts:
-        return  # không có part, build local thì bình thường
+        return
 
     print(f"[startup] Ghép {len(parts)} phần → chroma.sqlite3 ...", flush=True)
     with open(sqlite, "wb") as out:
         for part in parts:
             out.write(part.read_bytes())
 
-    # Verify MD5 nếu có
     md5_file = db_dir / "chroma.sqlite3.md5"
     if md5_file.exists():
         expected = md5_file.read_text().strip()
@@ -62,7 +61,6 @@ _reassemble_sqlite()
 # ---------------------------------------------------------------------------
 
 
-# Cho phép import các module trong src/ khi chạy `streamlit run app.py` từ root
 _SRC = Path(__file__).resolve().parent / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
@@ -107,46 +105,162 @@ st.set_page_config(
     page_title="Chatbot PTCT PT",
     page_icon="🎓",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",   # sidebar ẩn mặc định
 )
 
-# ── CSS ───────────────────────────────────────────────────────────────────────
+# ── CSS hiện đại ──────────────────────────────────────────────────────────────
 st.markdown(
     """
 <style>
+    /* ── Google Font ── */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+
+    /* ── Header ── */
     .main-header {
-        background: linear-gradient(135deg, #1e3a5f 0%, #2d6a9f 100%);
+        background: linear-gradient(135deg, #0f2744 0%, #1a4a8a 60%, #2563eb 100%);
         color: white;
-        padding: 1.5rem 2rem;
-        border-radius: 12px;
-        margin-bottom: 1.5rem;
+        padding: 1.2rem 2rem;
+        border-radius: 16px;
+        margin-bottom: 1rem;
         text-align: center;
+        box-shadow: 0 4px 24px rgba(37,99,235,0.18);
+        position: relative;
+        overflow: hidden;
     }
-    .main-header h1 { margin: 0; font-size: 1.8rem; }
-    .main-header p  { margin: 0.3rem 0 0; opacity: 0.85; font-size: 0.95rem; }
-
-    .stat-card {
-        background: #f0f4f8;
-        border-left: 4px solid #2d6a9f;
-        border-radius: 8px;
-        padding: 0.8rem 1rem;
-        margin-bottom: 0.8rem;
+    .main-header::before {
+        content: '';
+        position: absolute; top: -40%; left: -10%;
+        width: 60%; height: 200%;
+        background: radial-gradient(ellipse, rgba(255,255,255,0.07) 0%, transparent 70%);
+        pointer-events: none;
     }
-    .stat-card .label { font-size: 0.75rem; color: #666; text-transform: uppercase; }
-    .stat-card .value { font-size: 1.05rem; font-weight: 600; color: #1e3a5f; }
-    .stat-card .meta  { font-size: 0.78rem; color: #555; margin-top: 0.2rem; }
+    .main-header h1 {
+        margin: 0; font-size: 1.55rem; font-weight: 700; letter-spacing: -0.01em;
+    }
+    .main-header p { margin: 0.3rem 0 0; opacity: 0.82; font-size: 0.88rem; }
+    .header-badge {
+        display: inline-block;
+        background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.25);
+        border-radius: 20px;
+        padding: 0.15rem 0.75rem;
+        font-size: 0.75rem;
+        margin-top: 0.5rem;
+    }
 
+    /* ── Chat messages ── */
+    .stChatMessage {
+        border-radius: 14px !important;
+        margin-bottom: 0.5rem !important;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.06) !important;
+    }
+    [data-testid="stChatMessage-user"] {
+        background: linear-gradient(135deg, #eff6ff, #dbeafe) !important;
+        border: 1px solid #bfdbfe !important;
+    }
+    [data-testid="stChatMessage-assistant"] {
+        background: #ffffff !important;
+        border: 1px solid #e5e7eb !important;
+    }
+
+    /* ── Chat input ── */
+    [data-testid="stChatInput"] > div {
+        border-radius: 14px !important;
+        border: 2px solid #2563eb !important;
+        box-shadow: 0 2px 12px rgba(37,99,235,0.10) !important;
+        transition: box-shadow 0.2s;
+    }
+    [data-testid="stChatInput"] > div:focus-within {
+        box-shadow: 0 4px 20px rgba(37,99,235,0.20) !important;
+    }
+
+    /* ── Source card (cột phải) ── */
+    .src-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-left: 3px solid #2563eb;
+        border-radius: 10px;
+        padding: 0.55rem 0.75rem;
+        margin-bottom: 0.4rem;
+        font-size: 0.82rem;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        transition: box-shadow 0.15s;
+    }
+    .src-card:hover { box-shadow: 0 3px 10px rgba(37,99,235,0.10); }
+    .src-card .src-title {
+        font-weight: 600; color: #1e3a8a; font-size: 0.82rem; line-height: 1.3;
+    }
+    .src-card .src-meta { color: #64748b; font-size: 0.73rem; margin-top: 0.15rem; }
+    .src-card a { color: #2563eb; text-decoration: none; }
+    .src-card a:hover { text-decoration: underline; }
+
+    /* ── Source badge trong chat ── */
     .source-item {
-        background: #eef6ff;
-        border: 1px solid #bee3f8;
-        border-radius: 6px;
-        padding: 0.45rem 0.7rem;
-        margin: 0.25rem 0;
-        font-size: 0.88rem;
+        background: #f0f7ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        padding: 0.4rem 0.65rem;
+        margin: 0.2rem 0;
+        font-size: 0.84rem;
     }
-    .source-item .small { color: #555; font-size: 0.78rem; }
+    .source-item .small { color: #64748b; font-size: 0.75rem; }
 
-    .stChatMessage { border-radius: 10px !important; }
+    /* ── Stat chip ── */
+    .stat-chip {
+        display: inline-flex; align-items: center; gap: 0.3rem;
+        background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 20px;
+        padding: 0.2rem 0.7rem; font-size: 0.78rem; color: #475569; font-weight: 500;
+    }
+
+    /* ── Status badge ── */
+    .status-online {
+        display: inline-flex; align-items: center; gap: 0.4rem;
+        background: #dcfce7; border: 1px solid #bbf7d0; color: #166534;
+        border-radius: 20px; padding: 0.2rem 0.8rem;
+        font-size: 0.78rem; font-weight: 600;
+    }
+    .status-offline {
+        display: inline-flex; align-items: center; gap: 0.4rem;
+        background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+        border-radius: 20px; padding: 0.2rem 0.8rem;
+        font-size: 0.78rem; font-weight: 600;
+    }
+
+    /* ── Welcome cards ── */
+    .welcome-card {
+        background: linear-gradient(135deg, #f8faff, #eff6ff);
+        border: 1px solid #dbeafe; border-radius: 14px;
+        padding: 1.1rem 1.2rem; text-align: center;
+    }
+    .welcome-card .step-num {
+        background: #2563eb; color: white;
+        width: 28px; height: 28px; border-radius: 50%;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 0.8rem; font-weight: 700; margin-bottom: 0.4rem;
+    }
+    .welcome-card .step-title { font-weight: 600; font-size: 0.9rem; color: #1e3a8a; }
+    .welcome-card .step-desc  { font-size: 0.8rem; color: #64748b; margin-top: 0.2rem; }
+
+    /* ── Sidebar ── */
+    [data-testid="stSidebar"] { background: #f8fafc; border-right: 1px solid #e2e8f0; }
+    [data-testid="stSidebar"] .stButton > button { border-radius: 10px; font-weight: 500; }
+
+    /* ── Section label ── */
+    .section-label {
+        font-size: 0.72rem; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.08em;
+        color: #94a3b8; margin-bottom: 0.3rem;
+    }
+
+    /* ── Misc ── */
+    .stSpinner > div { border-top-color: #2563eb !important; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -172,23 +286,23 @@ def file_icon(file_type: str) -> str:
 
 # ── Session state init ────────────────────────────────────────────────────────
 _DEFAULTS = {
-    "messages"           : [],
-    "engine"             : None,
-    "doc_count"          : 0,
-    "model_loaded"       : False,
-    "selected_provider"  : None,
-    "selected_model"     : None,
-    "selected_categories": list(SOURCE_CATEGORIES.keys()),  # mặc định: chọn tất cả
-    "last_sources"       : [],
-    "last_docs_with_scores": [],
-    "total_questions"    : 0,
-    "pending_question"   : None,
-    "selected_embed_alias": DEFAULT_EMBED_ALIAS,
-    "selected_chunk_variant": DEFAULT_CHUNK_VARIANT,
+    "messages"              : [],
+    "engine"                : None,
+    "doc_count"             : 0,
+    "model_loaded"          : False,
+    "selected_provider"     : None,
+    "selected_model"        : None,
+    "selected_categories"   : list(SOURCE_CATEGORIES.keys()),
+    "last_sources"          : [],
+    "last_docs_with_scores" : [],
+    "total_questions"       : 0,
+    "selected_embed_alias"      : DEFAULT_EMBED_ALIAS,
+    "selected_chunk_variant"    : DEFAULT_CHUNK_VARIANT,
     "selected_chunking_strategy": DEFAULT_CHUNKING_STRATEGY,
-    "debug_retrieval": False,
-    "use_rerank"     : DEFAULT_USE_RERANK,
-    "neighbor_k"     : DEFAULT_NEIGHBOR_K,
+    "debug_retrieval"       : False,
+    "use_rerank"            : DEFAULT_USE_RERANK,
+    "neighbor_k"            : DEFAULT_NEIGHBOR_K,
+    "auto_started"          : False,
 }
 for _k, _v in _DEFAULTS.items():
     st.session_state.setdefault(_k, _v)
@@ -197,7 +311,6 @@ for _k, _v in _DEFAULTS.items():
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _answer(question: str, debug_retrieval: bool = False) -> tuple[str, list[dict], list[dict]]:
-    """Gọi engine.ask/ask_with_scores — trả về (answer, sources, docs_with_scores)."""
     try:
         if debug_retrieval:
             result = st.session_state.engine.ask_with_scores(question)
@@ -209,26 +322,44 @@ def _answer(question: str, debug_retrieval: bool = False) -> tuple[str, list[dic
 
 
 def _render_source_badge(src: dict) -> str:
-    icon = file_icon(src.get("type", ""))
-    page = src.get("page")
-    cat  = src.get("category")
-    size = src.get("file_size_kb")
+    icon      = file_icon(src.get("type", ""))
+    page      = src.get("page")
+    cat       = src.get("category")
+    size      = src.get("file_size_kb")
     bits = []
     if cat:  bits.append(str(cat))
     if page: bits.append(f"trang {page}")
     if size: bits.append(f"{size} KB")
-    meta = " · ".join(bits)
-
-    view_href = src.get("url") or "#"          # GitHub blob (xem online)
-    raw_href  = src.get("raw_url") or view_href  # raw (tải file)
+    meta      = " · ".join(bits)
+    view_href = src.get("url") or "#"
+    raw_href  = src.get("raw_url") or view_href
     name      = src.get("name") or "Không rõ"
-
-    # 2 link: Xem online (GitHub) + Tải file (raw)
     return (
         f'<div class="source-item">{icon} '
         f'<a href="{view_href}" target="_blank" title="Xem trên GitHub">{name}</a>'
         f' &nbsp;·&nbsp; <a href="{raw_href}" target="_blank" title="Tải file gốc">⬇️</a>'
         + (f'<div class="small">{meta}</div>' if meta else "")
+        + "</div>"
+    )
+
+
+def _render_src_card(i: int, src: dict) -> str:
+    icon     = file_icon(src.get("type", ""))
+    href     = src.get("url") or "#"
+    raw_href = src.get("raw_url") or href
+    name     = src.get("name") or "Không rõ"
+    page     = src.get("page")
+    cat      = src.get("category")
+    bits = []
+    if cat:  bits.append(str(cat))
+    if page: bits.append(f"tr.{page}")
+    meta = " · ".join(bits)
+    return (
+        f'<div class="src-card">'
+        f'<div class="src-title">{icon} '
+        f'<a href="{href}" target="_blank">{name}</a>'
+        f' <a href="{raw_href}" target="_blank" style="font-size:0.7rem;color:#94a3b8;">⬇️</a></div>'
+        + (f'<div class="src-meta">{meta}</div>' if meta else "")
         + "</div>"
     )
 
@@ -244,10 +375,10 @@ def _built_matrix() -> dict[str, set[str]]:
     combos = list_available_collections(CHROMA_DIR)
     parsed = [p for p in (_parse_collection_name(c) for c in combos) if p is not None]
     return {
-        "embed": {p[0] for p in parsed},
-        "variant": {p[1] for p in parsed},
+        "embed"   : {p[0] for p in parsed},
+        "variant" : {p[1] for p in parsed},
         "strategy": {p[2] for p in parsed},
-        "full": {"__".join(p) for p in parsed},
+        "full"    : {"__".join(p) for p in parsed},
     }
 
 
@@ -255,214 +386,213 @@ def _docs_with_scores_to_csv(rows: list[dict]) -> str:
     buf = StringIO()
     writer = csv.DictWriter(
         buf,
-        fieldnames=[
-            "score",
-            "document_name",
-            "page_number",
-            "chunk_index",
-            "char_count",
-            "source_url",
-            "content_preview",
-        ],
+        fieldnames=["score","document_name","page_number","chunk_index",
+                    "char_count","source_url","content_preview"],
     )
     writer.writeheader()
     for r in rows:
-        writer.writerow(
-            {
-                "score": r.get("score"),
-                "document_name": r.get("document_name"),
-                "page_number": r.get("page_number"),
-                "chunk_index": r.get("chunk_index"),
-                "char_count": r.get("char_count"),
-                "source_url": r.get("source_url"),
-                "content_preview": r.get("content_preview"),
-            }
-        )
+        writer.writerow({
+            "score"          : r.get("score"),
+            "document_name"  : r.get("document_name"),
+            "page_number"    : r.get("page_number"),
+            "chunk_index"    : r.get("chunk_index"),
+            "char_count"     : r.get("char_count"),
+            "source_url"     : r.get("source_url"),
+            "content_preview": r.get("content_preview"),
+        })
     return buf.getvalue()
 
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+def _do_start_engine(
+    provider, model, top_k, search_type, fetch_k,
+    lambda_mult, score_threshold, temperature, max_tokens,
+    embed_alias, chunk_variant, chunking_strategy,
+    categories, use_rerank, neighbor_k,
+) -> tuple[bool, str]:
+    """Khởi động RAG engine. Trả về (success, message)."""
+    try:
+        cats_arg = (
+            categories
+            if len(categories) < len(SOURCE_CATEGORIES)
+            else None
+        )
+        engine, _retriever, doc_count = load_rag_engine(
+            provider          = provider,
+            model_name        = model,
+            top_k             = top_k,
+            search_type       = search_type,
+            fetch_k           = fetch_k,
+            lambda_mult       = lambda_mult,
+            score_threshold   = score_threshold if search_type == "similarity_score_threshold" else None,
+            temperature       = temperature,
+            max_tokens        = max_tokens,
+            embed_alias       = embed_alias,
+            chunk_variant     = chunk_variant,
+            chunking_strategy = chunking_strategy,
+            categories        = cats_arg,
+            use_rerank        = use_rerank,
+            neighbor_k        = neighbor_k,
+        )
+        st.session_state.engine            = engine
+        st.session_state.doc_count         = doc_count
+        st.session_state.model_loaded      = True
+        st.session_state.selected_provider = provider
+        st.session_state.selected_model    = model
+        st.session_state.messages          = []
+        st.session_state.auto_started      = True
+        return True, f"✅ Sẵn sàng! ({doc_count:,} vectors)"
+    except FileNotFoundError as e:
+        return False, f"❌ {e}"
+    except (NoProviderConfiguredError, ProviderUnavailableError) as e:
+        return False, f"❌ Cấu hình LLM: {e}"
+    except Exception as e:
+        return False, f"❌ Lỗi: {e}"
+
+
+# ── Sidebar (collapsed mặc định) ──────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## ⚙️ Cài đặt")
 
-    st.markdown("### 🔌 Nhà cung cấp LLM")
+    # Provider
+    st.markdown('<div class="section-label">Nhà cung cấp LLM</div>', unsafe_allow_html=True)
     avail = available_providers()
     if not avail:
         st.error(
-            "Chưa có API key. Dev cần thiết lập 1 trong các biến môi trường: "
+            "Chưa có API key. Cần thiết lập: "
             + ", ".join(info["env_keys"][0] for info in PROVIDERS.values())
         )
-    else:
-        st.success(f"✅ Có {len(avail)} nhà cung cấp sẵn sàng")
-
-    if avail:
-        selected_provider = st.selectbox(
-            "Provider:",
-            options=avail,
-            format_func=lambda p: PROVIDERS[p]["label"],
-            index=0,
-        )
-    else:
         selected_provider = None
-
-    if selected_provider:
-        models = PROVIDERS[selected_provider]["models"]
-        st.markdown("### 🤖 Model")
-        selected_model = st.selectbox(
-            "Model:",
-            options=list(models.keys()),
-            format_func=lambda x: f"{x} — {models[x]}",
-            index=0,
-        )
+        selected_model    = None
     else:
-        selected_model = None
+        selected_provider = st.selectbox(
+            "Provider:", options=avail,
+            format_func=lambda p: PROVIDERS[p]["label"],
+            index=0, label_visibility="collapsed",
+        )
+        models = PROVIDERS[selected_provider]["models"]
+        st.markdown('<div class="section-label" style="margin-top:0.7rem">Model</div>', unsafe_allow_html=True)
+        selected_model = st.selectbox(
+            "Model:", options=list(models.keys()),
+            format_func=lambda x: models[x],
+            index=0, label_visibility="collapsed",
+        )
 
     built = _built_matrix()
 
-    st.markdown("### 🧠 Embedding")
+    # Embedding
+    st.markdown('<div class="section-label" style="margin-top:0.7rem">Embedding</div>', unsafe_allow_html=True)
     embed_options = sorted(built["embed"]) if built["embed"] else list(EMBED_MODELS.keys())
-    if not built["embed"]:
-        st.caption("Chưa phát hiện collection nào, đang hiển thị toàn bộ embedding alias.")
-
     selected_embed_alias = st.selectbox(
-        "Embedding alias:",
-        options=embed_options,
+        "Embedding:", options=embed_options,
         index=embed_options.index(st.session_state.selected_embed_alias)
-        if st.session_state.selected_embed_alias in embed_options
-        else 0,
+              if st.session_state.selected_embed_alias in embed_options else 0,
         format_func=lambda x: f"{x} — {EMBED_MODELS[x]['label']}",
+        label_visibility="collapsed",
     )
     st.session_state.selected_embed_alias = selected_embed_alias
 
-    st.markdown("### 🧩 Chunking")
+    # Chunking
+    st.markdown('<div class="section-label" style="margin-top:0.7rem">Chunking</div>', unsafe_allow_html=True)
     variant_options = sorted(built["variant"]) if built["variant"] else list(CHUNK_VARIANTS.keys())
     selected_chunk_variant = st.selectbox(
-        "Chunk variant:",
-        options=variant_options,
+        "Variant:", options=variant_options,
         index=variant_options.index(st.session_state.selected_chunk_variant)
-        if st.session_state.selected_chunk_variant in variant_options
-        else 0,
+              if st.session_state.selected_chunk_variant in variant_options else 0,
         format_func=lambda x: CHUNK_VARIANTS[x]["label"],
+        label_visibility="collapsed",
     )
     strategy_options = sorted(built["strategy"]) if built["strategy"] else list(CHUNKING_STRATEGIES.keys())
     selected_chunking_strategy = st.selectbox(
-        "Chunking strategy:",
-        options=strategy_options,
+        "Strategy:", options=strategy_options,
         index=strategy_options.index(st.session_state.selected_chunking_strategy)
-        if st.session_state.selected_chunking_strategy in strategy_options
-        else 0,
+              if st.session_state.selected_chunking_strategy in strategy_options else 0,
         format_func=lambda x: CHUNKING_STRATEGIES[x],
+        label_visibility="collapsed",
     )
-    st.session_state.selected_chunk_variant = selected_chunk_variant
+    st.session_state.selected_chunk_variant     = selected_chunk_variant
     st.session_state.selected_chunking_strategy = selected_chunking_strategy
 
     top_k = st.slider(
-        "Số đoạn tài liệu tham khảo (Top-K):",
-        min_value=MIN_TOP_K, max_value=MAX_TOP_K, value=DEFAULT_TOP_K,
-        help="Nhiều hơn = context rộng hơn nhưng chậm và tốn token hơn.",
+        "Top-K tài liệu:", min_value=MIN_TOP_K, max_value=MAX_TOP_K, value=DEFAULT_TOP_K,
     )
 
-    # ── Nguồn tài liệu (filter category để giảm vector phải duyệt) ───────────
-    st.markdown("### 📚 Nguồn tài liệu")
-    st.caption("Bỏ chọn nguồn không cần để giảm request và tăng tốc.")
+    # Nguồn tài liệu
+    st.markdown('<div class="section-label" style="margin-top:0.7rem">Nguồn tài liệu</div>', unsafe_allow_html=True)
     selected_categories: list[str] = []
     for cat_id, info in SOURCE_CATEGORIES.items():
         if st.checkbox(
-            f"{info['icon']} {info['label']}",
+            f"{info['icon']} {info['short']}",
             value=cat_id in st.session_state.selected_categories,
             key=f"cat_{cat_id}",
             help=info["description"],
         ):
             selected_categories.append(cat_id)
     st.session_state.selected_categories = selected_categories
-
     if not selected_categories:
-        st.warning("⚠️ Phải chọn ít nhất 1 nguồn tài liệu.")
+        st.warning("⚠️ Phải chọn ít nhất 1 nguồn.")
 
+    # Nâng cao
     with st.expander("⚙️ Nâng cao"):
         search_type = st.selectbox(
-            "Search type",
-            options=SEARCH_TYPES,
+            "Search type", options=SEARCH_TYPES,
             index=SEARCH_TYPES.index(DEFAULT_SEARCH_TYPE) if DEFAULT_SEARCH_TYPE in SEARCH_TYPES else 0,
         )
         fetch_k = st.slider(
-            "Fetch-K",
-            min_value=top_k,
-            max_value=50,
-            value=max(DEFAULT_FETCH_K, top_k),
-            step=1,
-            help="Số candidates trước khi chọn Top-K (hữu ích với MMR).",
+            "Fetch-K", min_value=top_k, max_value=50,
+            value=max(DEFAULT_FETCH_K, top_k), step=1,
         )
         lambda_mult = st.slider(
-            "Lambda (MMR)",
-            min_value=0.0,
-            max_value=1.0,
-            value=float(DEFAULT_LAMBDA_MULT),
-            step=0.05,
+            "Lambda (MMR)", min_value=0.0, max_value=1.0,
+            value=float(DEFAULT_LAMBDA_MULT), step=0.05,
             disabled=(search_type != "mmr"),
         )
         score_threshold = st.slider(
-            "Score threshold",
-            min_value=0.0,
-            max_value=1.0,
-            value=float(DEFAULT_SCORE_THRESHOLD or 0.3),
-            step=0.05,
+            "Score threshold", min_value=0.0, max_value=1.0,
+            value=float(DEFAULT_SCORE_THRESHOLD or 0.3), step=0.05,
             disabled=(search_type != "similarity_score_threshold"),
         )
         temperature = st.slider(
-            "Temperature",
-            min_value=0.0, max_value=1.0, value=DEFAULT_TEMPERATURE, step=0.05,
+            "Temperature", min_value=0.0, max_value=1.0,
+            value=DEFAULT_TEMPERATURE, step=0.05,
         )
         max_tokens = st.slider(
-            "Max tokens (đầu ra)",
-            min_value=256, max_value=8192, value=DEFAULT_MAX_TOKENS, step=128,
+            "Max tokens", min_value=256, max_value=8192,
+            value=DEFAULT_MAX_TOKENS, step=128,
         )
         debug_retrieval = st.checkbox(
-            "🔍 Chế độ debug retrieval",
-            value=st.session_state.debug_retrieval,
-            help="Hiển thị chunk, score, metadata và export CSV sau mỗi câu trả lời.",
+            "🔍 Debug retrieval", value=st.session_state.debug_retrieval,
         )
         st.session_state.debug_retrieval = debug_retrieval
 
-        st.markdown("**🔬 Reranker & Neighbor**")
         use_rerank = st.toggle(
-            "Dùng Reranker (BGE-M3)",
-            value=st.session_state.use_rerank,
-            help="Xếp lại chunks theo cross-encoder score. Chính xác hơn nhưng chậm hơn ~2-3 giây.",
+            "Reranker (BGE-M3)", value=st.session_state.use_rerank,
+            help="Chậm hơn ~2-3s nhưng chính xác hơn.",
         )
         st.session_state.use_rerank = use_rerank
 
         neighbor_k = st.slider(
-            "Neighbor context (±chunk)",
-            min_value=0,
-            max_value=3,
-            value=st.session_state.neighbor_k,
-            step=1,
-            help="Mở rộng context bằng cách lấy thêm chunk liền kề trong cùng tài liệu. 0 = tắt.",
+            "Neighbor context (±chunk)", min_value=0, max_value=3,
+            value=st.session_state.neighbor_k, step=1,
         )
         st.session_state.neighbor_k = neighbor_k
 
-        if use_rerank:
-            st.caption("⚠️ Reranker cần ~2-3 giây thêm mỗi câu hỏi và yêu cầu download model lần đầu.")
-
     target_collection = build_collection_name(
-        selected_embed_alias,
-        selected_chunk_variant,
-        selected_chunking_strategy,
+        selected_embed_alias, selected_chunk_variant, selected_chunking_strategy,
     )
-    if target_collection not in built["full"]:
-        st.warning("⚠️ Collection chưa có trong DB cho cấu hình đang chọn. Hãy build DB trước.")
+    collection_ready = target_collection in built["full"]
+    if not collection_ready:
+        st.warning("⚠️ Collection chưa có trong DB — cần build_db trước.")
 
     st.divider()
 
-    # Nếu đã khởi động và đổi retrieval/source params → cập nhật runtime
+    # Cập nhật retrieval params runtime
     if (
         st.session_state.model_loaded
         and st.session_state.engine is not None
         and selected_categories
     ):
         try:
-            cats_arg_runtime = (
+            cats_arg_rt = (
                 selected_categories
                 if len(selected_categories) < len(SOURCE_CATEGORIES)
                 else None
@@ -473,165 +603,176 @@ with st.sidebar:
                 fetch_k=fetch_k,
                 lambda_mult=lambda_mult,
                 score_threshold=score_threshold if search_type == "similarity_score_threshold" else None,
-                categories=cats_arg_runtime,
+                categories=cats_arg_rt,
                 use_rerank=use_rerank,
                 neighbor_k=neighbor_k,
             )
-        except Exception as e:
-            st.error(f"Không cập nhật được retrieval: {e}")
+        except Exception:
+            pass
 
+    btn_label = "🔄 Khởi động lại" if st.session_state.model_loaded else "🚀 Khởi động"
     if st.button(
-        "🚀 Khởi động Chatbot",
-        type="primary",
-        use_container_width=True,
-        disabled=(selected_provider is None or not selected_categories or target_collection not in built["full"]),
+        btn_label, type="primary", use_container_width=True,
+        disabled=(selected_provider is None or not selected_categories or not collection_ready),
     ):
-        with st.spinner("Đang tải mô hình và kết nối database..."):
-            try:
-                # Nếu user chọn tất cả nguồn → không cần filter (nhanh hơn)
-                cats_arg = (
-                    selected_categories
-                    if len(selected_categories) < len(SOURCE_CATEGORIES)
-                    else None
-                )
-                engine, _retriever, doc_count = load_rag_engine(
-                    provider    = selected_provider,
-                    model_name  = selected_model,
-                    top_k       = top_k,
-                    search_type = search_type,
-                    fetch_k     = fetch_k,
-                    lambda_mult = lambda_mult,
-                    score_threshold = score_threshold if search_type == "similarity_score_threshold" else None,
-                    temperature = temperature,
-                    max_tokens  = max_tokens,
-                    embed_alias = selected_embed_alias,
-                    chunk_variant = selected_chunk_variant,
-                    chunking_strategy = selected_chunking_strategy,
-                    categories  = cats_arg,
-                    use_rerank  = use_rerank,
-                    neighbor_k  = neighbor_k,
-                )
-                st.session_state.engine            = engine
-                st.session_state.doc_count         = doc_count
-                st.session_state.model_loaded      = True
-                st.session_state.selected_provider = selected_provider
-                st.session_state.selected_model    = selected_model
-                st.session_state.messages          = []
-                st.success(f"✅ Sẵn sàng! ({doc_count:,} vectors)")
-            except FileNotFoundError as e:
-                st.error(f"❌ {e}")
-            except (NoProviderConfiguredError, ProviderUnavailableError) as e:
-                st.error(f"❌ Cấu hình LLM: {e}")
-            except Exception as e:
-                st.error(f"❌ Lỗi: {e}")
-
-    st.divider()
-
-    st.markdown("### 📊 Thống kê")
-    db_exists = Path(CHROMA_DIR).exists() and any(Path(CHROMA_DIR).iterdir())
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric(
-            "Vectors",
-            f"{st.session_state.doc_count:,}" if st.session_state.model_loaded else "—",
-        )
-    with col2:
-        st.metric("Câu hỏi", st.session_state.total_questions)
-
-    if st.session_state.model_loaded:
-        prov = PROVIDERS[st.session_state.selected_provider]["label"]
-        st.success(f"🟢 {prov} · {st.session_state.selected_model}")
-        if st.session_state.engine is not None:
-            st.caption(f"🗂️ {st.session_state.engine.collection_name}")
-        active_cats = st.session_state.selected_categories
-        if active_cats and len(active_cats) < len(SOURCE_CATEGORIES):
-            badges = " · ".join(SOURCE_CATEGORIES[c]["short"] for c in active_cats)
-            st.caption(f"📚 Lọc nguồn: {badges}")
+        with st.spinner("Đang tải mô hình..."):
+            ok, msg = _do_start_engine(
+                provider=selected_provider, model=selected_model,
+                top_k=top_k, search_type=search_type, fetch_k=fetch_k,
+                lambda_mult=lambda_mult, score_threshold=score_threshold,
+                temperature=temperature, max_tokens=max_tokens,
+                embed_alias=selected_embed_alias,
+                chunk_variant=selected_chunk_variant,
+                chunking_strategy=selected_chunking_strategy,
+                categories=selected_categories,
+                use_rerank=use_rerank, neighbor_k=neighbor_k,
+            )
+        if ok:
+            st.success(msg)
+            st.rerun()
         else:
-            st.caption("📚 Lọc nguồn: tất cả")
-    else:
-        st.warning("🔴 Chưa khởi động")
-
-    if db_exists:
-        st.caption("✅ Database: sẵn sàng")
-    else:
-        st.caption("❌ Database: chưa có — chạy `python build_db.py` trước")
+            st.error(msg)
 
     st.divider()
 
+    # Thống kê
+    st.markdown('<div class="section-label">Trạng thái</div>', unsafe_allow_html=True)
+    if st.session_state.model_loaded:
+        prov_lbl  = PROVIDERS[st.session_state.selected_provider]["label"]
+        model_lbl = st.session_state.selected_model or ""
+        st.markdown(f'<div class="status-online">🟢 {prov_lbl}</div>', unsafe_allow_html=True)
+        st.caption(f"Model: `{model_lbl}`")
+        if st.session_state.engine:
+            st.caption(f"Collection: `{st.session_state.engine.collection_name}`")
+        c1, c2 = st.columns(2)
+        c1.metric("Vectors", f"{st.session_state.doc_count:,}")
+        c2.metric("Câu hỏi", st.session_state.total_questions)
+    else:
+        st.markdown('<div class="status-offline">🔴 Chưa khởi động</div>', unsafe_allow_html=True)
+
+    db_exists = Path(CHROMA_DIR).exists() and any(Path(CHROMA_DIR).iterdir())
+    st.caption("✅ Database: sẵn sàng" if db_exists else "❌ Database: chưa có")
+
+    st.divider()
     if st.button("🗑️ Xóa lịch sử chat", use_container_width=True):
         st.session_state.messages        = []
         st.session_state.last_sources    = []
         st.session_state.total_questions = 0
         st.rerun()
 
-    with st.expander("📖 Hướng dẫn"):
-        st.markdown(
-            "**Bước 1:** Chọn provider & model ở phía trên\n\n"
-            "**Bước 2:** Điều chỉnh Top-K\n\n"
-            "**Bước 3:** Bấm **Khởi động Chatbot**\n\n"
-            "**Bước 4:** Đặt câu hỏi trong ô chat\n\n"
-            "---\n\n"
-            "**Cho dev:** đặt API key vào biến môi trường — `GROQ_API_KEY`, "
-            "`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`."
-        )
-
     with st.expander("🩺 Trạng thái hệ thống"):
         st.code(describe_status(), language="text")
 
 
-# ── Main content ──────────────────────────────────────────────────────────────
+# ── Auto-start: tự khởi động khi mở app lần đầu ─────────────────────────────
+if not st.session_state.model_loaded and not st.session_state.auto_started:
+    avail_now = available_providers()
+    built_now  = _built_matrix()
+    if avail_now and built_now["full"]:
+        _prov  = avail_now[0]
+        _model = list(PROVIDERS[_prov]["models"].keys())[0]
+        _embed = (
+            st.session_state.selected_embed_alias
+            if st.session_state.selected_embed_alias in built_now["embed"]
+            else sorted(built_now["embed"])[0]
+        )
+        _variant = (
+            st.session_state.selected_chunk_variant
+            if st.session_state.selected_chunk_variant in built_now["variant"]
+            else sorted(built_now["variant"])[0]
+        )
+        _strategy = (
+            st.session_state.selected_chunking_strategy
+            if st.session_state.selected_chunking_strategy in built_now["strategy"]
+            else sorted(built_now["strategy"])[0]
+        )
+        _target = build_collection_name(_embed, _variant, _strategy)
+        if _target in built_now["full"]:
+            with st.spinner("⏳ Đang khởi động chatbot..."):
+                _ok, _msg = _do_start_engine(
+                    provider=_prov, model=_model,
+                    top_k=DEFAULT_TOP_K,
+                    search_type=DEFAULT_SEARCH_TYPE,
+                    fetch_k=DEFAULT_FETCH_K,
+                    lambda_mult=DEFAULT_LAMBDA_MULT,
+                    score_threshold=DEFAULT_SCORE_THRESHOLD,
+                    temperature=DEFAULT_TEMPERATURE,
+                    max_tokens=DEFAULT_MAX_TOKENS,
+                    embed_alias=_embed,
+                    chunk_variant=_variant,
+                    chunking_strategy=_strategy,
+                    categories=list(SOURCE_CATEGORIES.keys()),
+                    use_rerank=DEFAULT_USE_RERANK,
+                    neighbor_k=DEFAULT_NEIGHBOR_K,
+                )
+            if _ok:
+                st.rerun()
+            else:
+                st.session_state.auto_started = True   # ngăn loop vô hạn
+
+
+# ── Header ────────────────────────────────────────────────────────────────────
 st.markdown(
     """
 <div class="main-header">
     <h1>🎓 Chatbot Tư Vấn Giáo Dục Phổ Thông</h1>
-    <p>Hỏi đáp thông minh dựa trên văn bản quy định của Bộ GD&ĐT Việt Nam</p>
+    <p>Hỏi đáp thông minh dựa trên văn bản quy định của Bộ GD&amp;ĐT &amp; FPT/FSC</p>
+    <span class="header-badge">CT GDPT 2018 · TT 32/2018 · Quyết định FPT/FSC</span>
 </div>
 """,
     unsafe_allow_html=True,
 )
 
+# ── Màn hình chào (chỉ hiện khi chưa sẵn sàng) ───────────────────────────────
 if not st.session_state.model_loaded:
-    st.markdown("### 👋 Chào mừng!")
     col1, col2, col3 = st.columns(3)
-    with col1:
-        st.info("**Bước 1**\n\n🔌 Chọn LLM provider ở sidebar")
-    with col2:
-        st.info("**Bước 2**\n\n🤖 Chọn model phù hợp")
-    with col3:
-        st.info("**Bước 3**\n\n🚀 Bấm **Khởi động Chatbot**")
-
+    cards = [
+        ("1", "Mở cài đặt",  "Click ☰ để mở sidebar, chọn LLM provider"),
+        ("2", "Chọn model",  "Chọn provider và model phù hợp"),
+        ("3", "Bắt đầu hỏi","Nhập câu hỏi vào ô bên dưới"),
+    ]
+    for col, (num, title, desc) in zip([col1, col2, col3], cards):
+        with col:
+            st.markdown(
+                f'<div class="welcome-card">'
+                f'<div class="step-num">{num}</div>'
+                f'<div class="step-title">{title}</div>'
+                f'<div class="step-desc">{desc}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
     st.markdown("---")
-    st.markdown("### 💡 Ví dụ câu hỏi:")
-    for ex in [
+    st.markdown("##### 💡 Câu hỏi ví dụ")
+    ex_cols = st.columns(2)
+    examples = [
         "Học sinh cần đáp ứng điều kiện gì để được lên lớp?",
         "Cấu trúc chương trình GDPT 2018 gồm những gì?",
         "Quy định về đánh giá học sinh tiểu học như thế nào?",
         "Các môn học bắt buộc ở cấp THPT là gì?",
         "Điều kiện tốt nghiệp THPT theo quy định hiện hành?",
-    ]:
-        st.markdown(f"- *{ex}*")
+        "Kế hoạch giáo dục FSC năm 2026-2027 có điểm gì mới?",
+    ]
+    for i, ex in enumerate(examples):
+        with ex_cols[i % 2]:
+            st.markdown(f"- *{ex}*")
     st.stop()
 
 
-# ── Khu vực chat ──────────────────────────────────────────────────────────────
+# ── Layout chính: chat (3) | nguồn (1) ───────────────────────────────────────
 chat_col, source_col = st.columns([3, 1])
 
 with chat_col:
-    st.markdown("### 💬 Hội thoại")
-
+    # Lịch sử hội thoại đẩy lên trên, input pin dưới
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
             if msg["role"] == "assistant" and msg.get("sources"):
-                with st.expander(f"📚 {len(msg['sources'])} tài liệu tham khảo"):
+                with st.expander(f"📚 {len(msg['sources'])} tài liệu tham khảo", expanded=False):
                     for src in msg["sources"]:
                         st.markdown(_render_source_badge(src), unsafe_allow_html=True)
 
-    question = st.chat_input("Nhập câu hỏi của bạn về chương trình GDPT...")
-    if not question and st.session_state.pending_question:
-        question = st.session_state.pending_question
-        st.session_state.pending_question = None
+    # Input ở cuối (Streamlit tự pin xuống)
+    question = st.chat_input("Nhập câu hỏi về chương trình GDPT, quy định FPT/FSC...")
 
     if question:
         st.session_state.messages.append({"role": "user", "content": question})
@@ -639,14 +780,14 @@ with chat_col:
             st.markdown(question)
 
         with st.chat_message("assistant"):
-            with st.spinner("🔍 Đang tìm kiếm trong tài liệu và phân tích..."):
+            with st.spinner("🔍 Đang phân tích tài liệu..."):
                 answer, sources, docs_with_scores = _answer(
                     question,
                     debug_retrieval=st.session_state.debug_retrieval,
                 )
             st.markdown(answer)
             if sources:
-                with st.expander(f"📚 {len(sources)} tài liệu tham khảo"):
+                with st.expander(f"📚 {len(sources)} tài liệu tham khảo", expanded=False):
                     for src in sources:
                         st.markdown(_render_source_badge(src), unsafe_allow_html=True)
 
@@ -655,75 +796,58 @@ with chat_col:
             "content": answer,
             "sources": sources,
         })
-        st.session_state.last_sources    = sources
+        st.session_state.last_sources          = sources
         st.session_state.last_docs_with_scores = docs_with_scores
-        st.session_state.total_questions += 1
+        st.session_state.total_questions      += 1
 
 
+# ── Cột phải: trạng thái + nguồn gần nhất (thu gọn) ─────────────────────────
 with source_col:
-    st.markdown("### 📚 Nguồn gần nhất")
-    if st.session_state.last_sources:
-        for i, src in enumerate(st.session_state.last_sources, 1):
-            icon = file_icon(src.get("type", ""))
-            href = src.get("url") or "#"
-            name = src.get("name") or "Không rõ"
-            page = src.get("page")
-            cat  = src.get("category")
-            bits = []
-            if cat:  bits.append(str(cat))
-            if page: bits.append(f"trang {page}")
-            meta_line = " · ".join(bits)
-            html = (
-                f'<div class="stat-card">'
-                f'<div class="label">Nguồn {i}</div>'
-                f'<div class="value">{icon} <a href="{href}" target="_blank">{name}</a></div>'
-            )
-            if meta_line:
-                html += f'<div class="meta">{meta_line}</div>'
-            html += "</div>"
-            st.markdown(html, unsafe_allow_html=True)
-    else:
-        st.caption("Nguồn tài liệu sẽ hiện sau câu trả lời đầu tiên.")
+    if st.session_state.model_loaded:
+        prov_short = PROVIDERS[st.session_state.selected_provider]["label"]
+        st.markdown(
+            f'<div class="stat-chip">🟢 {prov_short}</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<div class="stat-chip" style="margin-top:0.35rem">💬 {st.session_state.total_questions} câu hỏi</div>',
+            unsafe_allow_html=True,
+        )
+    st.markdown("")
 
+    # Nguồn gần nhất — accordion, mặc định đóng
+    if st.session_state.last_sources:
+        with st.expander(
+            f"📚 Nguồn ({len(st.session_state.last_sources)})",
+            expanded=False,
+        ):
+            for i, src in enumerate(st.session_state.last_sources, 1):
+                st.markdown(_render_src_card(i, src), unsafe_allow_html=True)
+    else:
+        st.caption("📚 Nguồn tài liệu sẽ hiện ở đây sau câu trả lời đầu tiên.")
+
+    # Debug retrieval (ẩn trong expander)
     if st.session_state.debug_retrieval and st.session_state.last_docs_with_scores:
         st.divider()
-        st.markdown("### 🔍 Retrieval debug")
-        rows = st.session_state.last_docs_with_scores
-        csv_data = _docs_with_scores_to_csv(rows)
-        st.download_button(
-            "📥 Export retrieved chunks (CSV)",
-            data=csv_data,
-            file_name="retrieved_chunks.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-
-        for i, row in enumerate(rows, start=1):
-            score = row.get("score")
-            score_txt = f"{score:.4f}" if isinstance(score, float) else "n/a"
-            title = f"Chunk {i} · score={score_txt}"
-            with st.expander(title):
-                st.markdown(f"**Tài liệu:** {row.get('document_name')}")
-                st.markdown(
-                    f"- **Trang:** {row.get('page_number')}\n"
-                    f"- **Chunk:** {row.get('chunk_index')}\n"
-                    f"- **Độ dài:** {row.get('char_count')} ký tự"
-                )
-                src = row.get("source_url")
-                if src:
-                    st.markdown(f"[Nguồn]({src})")
-                st.code(row.get("content_preview") or "", language="text")
-
-    st.divider()
-    st.markdown("### ⚡ Hỏi nhanh")
-    quick_questions = [
-        "Điều kiện lên lớp?",
-        "Chương trình GDPT 2018?",
-        "Đánh giá học sinh?",
-        "Môn học bắt buộc THPT?",
-        "Điều kiện tốt nghiệp?",
-    ]
-    for qq in quick_questions:
-        if st.button(qq, key=f"quick_{qq}", use_container_width=True):
-            st.session_state.pending_question = qq
-            st.rerun()
+        with st.expander("🔍 Debug retrieval", expanded=False):
+            rows = st.session_state.last_docs_with_scores
+            st.download_button(
+                "📥 Export CSV",
+                data=_docs_with_scores_to_csv(rows),
+                file_name="retrieved_chunks.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+            for i, row in enumerate(rows, start=1):
+                score     = row.get("score")
+                score_txt = f"{score:.4f}" if isinstance(score, float) else "n/a"
+                with st.expander(f"Chunk {i} · {score_txt}", expanded=False):
+                    st.markdown(f"**{row.get('document_name')}**")
+                    st.caption(
+                        f"Trang {row.get('page_number')} · "
+                        f"Chunk {row.get('chunk_index')} · "
+                        f"{row.get('char_count')} ký tự"
+                    )
+                    if row.get("source_url"):
+                        st.markdown(f"[Nguồn]({row['source_url']})")
+                    st.code(row.get("content_preview") or "", language="text")

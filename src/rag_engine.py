@@ -11,7 +11,9 @@ Khác với phiên bản cũ:
 
 from __future__ import annotations
 
+import logging
 import unicodedata
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
 
@@ -70,24 +72,111 @@ __all__ = [
     "resolve_provider",
 ]
 
+logger = logging.getLogger(__name__)
+
 
 # ── Helper functions ──────────────────────────────────────────────────────────
 
+def _normalize_chroma_dir(chroma_dir: str) -> str:
+    """Chuẩn hóa đường dẫn Chroma để cache key ổn định giữa các lần gọi."""
+    return str(Path(chroma_dir).resolve())
+
+
+def _db_signature(chroma_dir: str) -> tuple[tuple[str, int, int], ...]:
+    """
+    Tạo chữ ký nhẹ của thư mục ChromaDB để cache tự invalid khi DB thay đổi.
+
+    Dùng tên file + kích thước + mtime_ns cho các file top-level trong chroma_db/.
+    """
+    db_path = Path(chroma_dir)
+    if not db_path.exists():
+        return ()
+
+    entries: list[tuple[str, int, int]] = []
+    for child in sorted(db_path.iterdir(), key=lambda p: p.name.lower()):
+        if not child.is_file():
+            continue
+        stat = child.stat()
+        entries.append((child.name, int(stat.st_size), int(stat.st_mtime_ns)))
+    return tuple(entries)
+
+
+@lru_cache(maxsize=8)
+def _get_embeddings(embed_alias: str) -> HuggingFaceEmbeddings:
+    """Cache embedding model theo alias để tránh load lại giữa các rerun/session."""
+    model_name = get_embed_model_name(embed_alias)
+    logger.info("[RAGEngine] Loading embeddings %s -> %s", embed_alias, model_name)
+    return HuggingFaceEmbeddings(
+        model_name=model_name,
+        show_progress=False,
+        encode_kwargs={"batch_size": 64},
+    )
+
+
+@lru_cache(maxsize=32)
+def _get_vectorstore(
+    chroma_dir: str,
+    collection_name: str,
+    embed_alias: str,
+    db_signature: tuple[tuple[str, int, int], ...],
+) -> Chroma:
+    """Cache Chroma vectorstore theo collection và chữ ký DB."""
+    del db_signature
+    return Chroma(
+        persist_directory=chroma_dir,
+        embedding_function=_get_embeddings(embed_alias),
+        collection_name=collection_name,
+    )
+
+
+@lru_cache(maxsize=32)
+def _get_collection_count(
+    chroma_dir: str,
+    collection_name: str,
+    embed_alias: str,
+    db_signature: tuple[tuple[str, int, int], ...],
+) -> int:
+    """Cache doc_count của collection tương ứng với trạng thái DB hiện tại."""
+    return _get_vectorstore(
+        chroma_dir=chroma_dir,
+        collection_name=collection_name,
+        embed_alias=embed_alias,
+        db_signature=db_signature,
+    )._collection.count()
+
+
+@lru_cache(maxsize=8)
+def _list_available_collections_cached(
+    chroma_dir: str,
+    db_signature: tuple[tuple[str, int, int], ...],
+) -> tuple[str, ...]:
+    """Cache danh sách collection để sidebar không query PersistentClient lặp lại."""
+    del db_signature
+    client = chromadb.PersistentClient(path=chroma_dir)
+    return tuple(sorted(c.name for c in client.list_collections()))
+
 def format_docs(docs: list[Document]) -> str:
-    """Ghép nội dung docs thành chuỗi context có nhãn nguồn."""
+    """Ghép docs thành context có cấu trúc rõ ràng để LLM bám nguồn tốt hơn."""
     parts: list[str] = []
-    for doc in docs:
+    for index, doc in enumerate(docs, start=1):
         meta = doc.metadata or {}
         name = meta.get("document_name") or meta.get("file_name") or "Không rõ"
         url  = meta.get("source_url", "")
         page = meta.get("page_number")
-        header = f"[Nguồn: {name}"
+        category = meta.get("category") or "Không rõ"
+        chunk_index = meta.get("chunk_index")
+        lines = [f"[Tài liệu {index}]"]
+        lines.append(f"Tên văn bản: {name}")
+        lines.append(f"Nhóm tài liệu: {category}")
         if page:
-            header += f" — trang {page}"
+            lines.append(f"Trang: {page}")
+        if chunk_index is not None:
+            lines.append(f"Chunk: {chunk_index}")
         if url:
-            header += f" | {url}"
-        header += "]"
-        parts.append(f"{header}\n{doc.page_content}")
+            lines.append(f"URL nguồn: {url}")
+        lines.append("Nội dung trích:")
+        lines.append(doc.page_content)
+        parts.append("\n".join(lines))
     return "\n\n---\n\n".join(parts)
 
 
@@ -166,12 +255,14 @@ class RAGEngine:
         rerank_top_n: Optional[int] = DEFAULT_RERANK_TOP_N,
     ):
         # 1) Kiểm tra DB
+        chroma_dir = _normalize_chroma_dir(chroma_dir)
         db_path = Path(chroma_dir)
         if not db_path.exists() or not any(db_path.iterdir()):
             raise FileNotFoundError(
                 f"Không tìm thấy Vector Database tại '{chroma_dir}'.\n"
                 "Hãy chạy: python build_db.py --mode rebuild"
             )
+        db_signature = _db_signature(chroma_dir)
 
         # 2) Embeddings + vectorstore
         self.embed_alias = get_embed_alias(embed_alias)
@@ -183,15 +274,19 @@ class RAGEngine:
             self.chunking_strategy,
         )
 
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=get_embed_model_name(self.embed_alias)
-        )
-        self.vectorstore = Chroma(
-            persist_directory=chroma_dir,
-            embedding_function=self.embeddings,
+        self.embeddings = _get_embeddings(self.embed_alias)
+        self.vectorstore = _get_vectorstore(
+            chroma_dir=chroma_dir,
             collection_name=self.collection_name,
+            embed_alias=self.embed_alias,
+            db_signature=db_signature,
         )
-        self.doc_count = self.vectorstore._collection.count()
+        self.doc_count = _get_collection_count(
+            chroma_dir=chroma_dir,
+            collection_name=self.collection_name,
+            embed_alias=self.embed_alias,
+            db_signature=db_signature,
+        )
         if self.doc_count == 0:
             raise ValueError("Vector Database rỗng. Hãy chạy build_db.py để index tài liệu.")
 
@@ -235,9 +330,10 @@ class RAGEngine:
             ("system", SYSTEM_PROMPT_V2),
             (
                 "human",
-                "Câu hỏi: {input}\n\n"
-                "--- CONTEXT ---\n"
-                "{context}",
+                "Câu hỏi của người dùng:\n{input}\n\n"
+                "CONTEXT TRÍCH XUẤT TỪ KHO TÀI LIỆU:\n"
+                "{context}\n\n"
+                "Hãy tạo câu trả lời cuối cùng bằng tiếng Việt, bám sát tài liệu và có trích dẫn nguồn.",
             ),
         ])
         self._answer_chain = self.prompt | self.llm | StrOutputParser()
@@ -572,11 +668,11 @@ def load_rag_engine(
 
 def list_available_collections(chroma_dir: str = CHROMA_DIR) -> list[str]:
     """Liệt kê các collection đang tồn tại trong ChromaDB."""
+    chroma_dir = _normalize_chroma_dir(chroma_dir)
     db_path = Path(chroma_dir)
     if not db_path.exists():
         return []
     try:
-        client = chromadb.PersistentClient(path=chroma_dir)
-        return sorted(c.name for c in client.list_collections())
+        return list(_list_available_collections_cached(chroma_dir, _db_signature(chroma_dir)))
     except Exception:
         return []

@@ -228,6 +228,7 @@ Tom tat:
 2. Tao app tren Streamlit Cloud voi main file la app.py
 3. Them secrets (API keys)
 4. Deploy va kiem tra sidebar/provider
+5. Runtime se cache embedding model va Chroma collection de giam thoi gian warm-up lap lai
 
 Chi tiet xem tai lieu rieng:
 - docs/DEPLOY.md

@@ -12,6 +12,8 @@ Chatbot RAG (Retrieval-Augmented Generation) tư vấn về Phát triển Chươ
 - **CLI build_db** — rebuild / add / remove / status.
 - **Multi-collection indexing** — embed/chunk/strategy tách collection riêng.
 - **Advanced retrieval** — similarity, MMR, similarity with score threshold.
+- **UI chatbot-first** — sidebar thu gọn mặc định, chat input ở cuối màn hình, tự khởi động khi đủ cấu hình.
+- **Runtime caching cho deploy** — tái dùng embedding model, Chroma collection và collection listing để giảm warm-up lặp lại.
 
 ## 📂 Cấu trúc
 
