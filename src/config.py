@@ -216,12 +216,13 @@ PROVIDERS: dict[str, dict] = {
         "label"   : "OpenAI",
         "env_keys": ["OPENAI_API_KEY"],
         "lib_hint": "langchain-openai",
-        "default" : "gpt-4o-mini",
+        "default" : "gpt-4.1-mini",
         "models"  : {
-            "gpt-4o"      : "GPT-4o — Mạnh nhất",
+            "gpt-4.1"     : "GPT-4.1 — Mạnh nhất, thế hệ mới nhất",
+            "gpt-4o"      : "GPT-4o — Mạnh, phổ biến, tiếng Việt tốt",
+            "gpt-4.1-mini": "GPT-4.1 mini — Nhanh, thế hệ mới (mặc định)",
             "gpt-4o-mini" : "GPT-4o mini — Nhanh, rẻ",
-            "gpt-4-turbo" : "GPT-4 Turbo",
-            "gpt-3.5-turbo": "GPT-3.5 Turbo — Cũ, rẻ",
+            "o4-mini"     : "o4-mini — Suy luận sâu, phù hợp câu hỏi phức tạp",
         },
     },
     "anthropic": {
