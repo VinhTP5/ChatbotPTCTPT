@@ -727,32 +727,3 @@ with source_col:
         if st.button(qq, key=f"quick_{qq}", use_container_width=True):
             st.session_state.pending_question = qq
             st.rerun()
- start=1):
-            score = row.get("score")
-            score_txt = f"{score:.4f}" if isinstance(score, float) else "n/a"
-            title = f"Chunk {i} · score={score_txt}"
-            with st.expander(title):
-                st.markdown(f"**Tài liệu:** {row.get('document_name')}")
-                st.markdown(
-                    f"- **Trang:** {row.get('page_number')}\n"
-                    f"- **Chunk:** {row.get('chunk_index')}\n"
-                    f"- **Độ dài:** {row.get('char_count')} ký tự"
-                )
-                src = row.get("source_url")
-                if src:
-                    st.markdown(f"[Nguồn]({src})")
-                st.code(row.get("content_preview") or "", language="text")
-
-    st.divider()
-    st.markdown("### ⚡ Hỏi nhanh")
-    quick_questions = [
-        "Điều kiện lên lớp?",
-        "Chương trình GDPT 2018?",
-        "Đánh giá học sinh?",
-        "Môn học bắt buộc THPT?",
-        "Điều kiện tốt nghiệp?",
-    ]
-    for qq in quick_questions:
-        if st.button(qq, key=f"quick_{qq}", use_container_width=True):
-            st.session_state.pending_question = qq
-            st.rerun()
