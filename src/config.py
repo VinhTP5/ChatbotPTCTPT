@@ -84,14 +84,14 @@ CHUNK_VARIANTS = {
         "label": "Coarse ΓÇö 1000/150",
     },
 }
-DEFAULT_CHUNK_VARIANT = "fine"
+DEFAULT_CHUNK_VARIANT = "coarse"
 
 CHUNKING_STRATEGIES = {
     "standard": "Standard ΓÇö embed tß╗½ng chunk ─æß╗Öc lß║¡p",
     "late": "Late Chunking ΓÇö embed full text rß╗ôi pool theo chunk",
     "long_late": "Long Late Chunking ΓÇö overlap windows cho t├ái liß╗çu d├ái",
 }
-DEFAULT_CHUNKING_STRATEGY = "late"
+DEFAULT_CHUNKING_STRATEGY = "standard"
 
 CHUNK_SIZE = CHUNK_VARIANTS[DEFAULT_CHUNK_VARIANT]["chunk_size"]
 CHUNK_OVERLAP = CHUNK_VARIANTS[DEFAULT_CHUNK_VARIANT]["chunk_overlap"]
@@ -403,3 +403,8 @@ def build_collection_name(
     var, _, _ = get_chunk_params(chunk_variant)
     strategy = get_chunking_strategy(chunking_strategy)
     return f"{emb}__{var}__{strategy}"
+
+
+# ── Nguồn tài liệu mặc định (FPT on, Bộ GD off) ──────────────────────────────
+# Admin có thể ghi đè qua admin_config.json
+DEFAULT_CATEGORIES: list[str] = ["QD"]
