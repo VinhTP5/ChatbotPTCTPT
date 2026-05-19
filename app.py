@@ -14,6 +14,11 @@ Người dùng cuối KHÔNG cần nhập API key. App tự phát hiện provide
 
 from __future__ import annotations
 
+# Fix encoding UTF-8 trên Windows (Python 3.14 mặc định dùng cp1252)
+import os as _os
+_os.environ.setdefault("PYTHONUTF8", "1")
+_os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 import sys
 import csv
 from io import StringIO
