@@ -20,8 +20,8 @@
 *.xls       binary
 *.pptx      binary
 *.ppt       binary
-*.sqlite3 filter=lfs diff=lfs merge=lfs -text
-*.bin filter=lfs diff=lfs merge=lfs -text
-# LFS cho toàn bộ kho dữ liệu lớn / artifact build
-chroma_db/** filter=lfs diff=lfs merge=lfs -text
-data/**      filter=lfs diff=lfs merge=lfs -text
+*.sqlite3   binary
+*.bin       binary
+# chroma_db và data dùng git thường (không dùng LFS — bandwidth đã hết)
+# chroma_db/** filter=lfs diff=lfs merge=lfs -text
+# data/**      filter=lfs diff=lfs merge=lfs -text

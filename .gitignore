@@ -47,3 +47,6 @@ desktop.ini
 # Thay vào đó dùng scripts/split_db.py để tạo các .part.NNN (<48 MB mỗi file).
 # Các file khác (data_level0.bin, .pickle, ...) commit bình thường.
 chroma_db/chroma.sqlite3
+
+# ── Encoding backup files ────────────────────────────────────────────────────
+*.bak_encoding

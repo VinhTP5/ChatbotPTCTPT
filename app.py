@@ -95,12 +95,14 @@ from config import (  # noqa: E402
     DEFAULT_TOP_K,
     DEFAULT_USE_RERANK,
     EMBED_MODELS,
+    FAST_LOAD_COLLECTIONS,
     MAX_TOP_K,
     MIN_TOP_K,
     PROVIDERS,
     SEARCH_TYPES,
     SOURCE_CATEGORIES,
     build_collection_name,
+    is_fast_load,
 )
 from llm_providers import (  # noqa: E402
     NoProviderConfiguredError,
@@ -686,18 +688,26 @@ with st.sidebar:
 
         built = _built_matrix()
 
-        # Embedding
+        # ── Embedding + badge Fast/On-demand ──────────────────────────────────
         st.markdown('<div class="section-label" style="margin-top:0.7rem">Embedding</div>', unsafe_allow_html=True)
         embed_options = sorted(built["embed"]) if built["embed"] else list(EMBED_MODELS.keys())
         cfg_embed = _admin_cfg.get("embed_alias", DEFAULT_EMBED_ALIAS)
+
+        def _embed_label(x: str) -> str:
+            """Hiển thị tên embedding kèm badge ⚡ (fast) hoặc 🔄 (on-demand)."""
+            # Kiểm tra xem embed này có nằm trong ít nhất 1 fast-load collection không
+            fast = any(c.startswith(x + "__") for c in FAST_LOAD_COLLECTIONS)
+            badge = "⚡" if fast else "🔄"
+            return f"{badge} {x} — {EMBED_MODELS[x]['label']}" if x in EMBED_MODELS else f"{badge} {x}"
+
         selected_embed_alias = st.selectbox(
             "Embedding:", options=embed_options,
             index=embed_options.index(cfg_embed) if cfg_embed in embed_options else 0,
-            format_func=lambda x: f"{x} — {EMBED_MODELS[x]['label']}",
+            format_func=_embed_label,
             label_visibility="collapsed",
         )
 
-        # Chunking
+        # ── Chunking ──────────────────────────────────────────────────────────
         st.markdown('<div class="section-label" style="margin-top:0.7rem">Chunking</div>', unsafe_allow_html=True)
         variant_options = sorted(built["variant"]) if built["variant"] else list(CHUNK_VARIANTS.keys())
         cfg_variant = _admin_cfg.get("chunk_variant", DEFAULT_CHUNK_VARIANT)
@@ -768,8 +778,16 @@ with st.sidebar:
             selected_embed_alias, selected_chunk_variant, selected_chunking_strategy,
         )
         collection_ready = target_collection in built["full"]
+        _is_fast = is_fast_load(target_collection)
         if not collection_ready:
             st.warning("⚠️ Collection chưa có trong DB — cần build_db trước.")
+        elif _is_fast:
+            st.success(f"⚡ Fast-load: `{target_collection}`")
+        else:
+            st.info(
+                f"🔄 On-demand: `{target_collection}`\n\n"
+                "Collection này không nằm trong fast-load — sẽ tải khi bấm **Áp dụng**."
+            )
 
         # Nguồn tài liệu mặc định (admin config)
         st.markdown('<div class="section-label" style="margin-top:0.7rem">Nguồn mặc định (tất cả người dùng)</div>',
@@ -898,6 +916,8 @@ with st.sidebar:
 
 
 # ── Auto-start: tự khởi động khi mở app lần đầu ─────────────────────────────
+# Chỉ auto-start với FAST_LOAD_COLLECTIONS (bge_m3__coarse hoặc minilm__coarse).
+# Collections khác phải do admin bấm "Áp dụng" để load theo yêu cầu.
 if not st.session_state.model_loaded and not st.session_state.auto_started:
     avail_now  = available_providers()
     built_now  = _built_matrix()
@@ -909,20 +929,29 @@ if not st.session_state.model_loaded and not st.session_state.auto_started:
         _models_list = list(PROVIDERS[_prov]["models"].keys())
         _model = _model_cfg if _model_cfg in _models_list else _models_list[0]
 
-        _embed = _admin_cfg.get("embed_alias", DEFAULT_EMBED_ALIAS)
-        if _embed not in built_now["embed"]:
-            _embed = sorted(built_now["embed"])[0]
-
+        _embed   = _admin_cfg.get("embed_alias", DEFAULT_EMBED_ALIAS)
         _variant = _admin_cfg.get("chunk_variant", DEFAULT_CHUNK_VARIANT)
-        if _variant not in built_now["variant"]:
-            _variant = sorted(built_now["variant"])[0]
-
         _strategy = _admin_cfg.get("chunking_strategy", DEFAULT_CHUNKING_STRATEGY)
-        if _strategy not in built_now["strategy"]:
-            _strategy = sorted(built_now["strategy"])[0]
+        _target  = build_collection_name(_embed, _variant, _strategy)
 
-        _target = build_collection_name(_embed, _variant, _strategy)
-        if _target in built_now["full"]:
+        # ── Kiểm tra fast-load: nếu collection trong admin config KHÔNG phải
+        #    fast-load, tìm fast-load collection tốt nhất để dùng thay thế.
+        if not is_fast_load(_target) or _target not in built_now["full"]:
+            # Duyệt theo thứ tự ưu tiên trong FAST_LOAD_COLLECTIONS
+            _fast_target = next(
+                (c for c in FAST_LOAD_COLLECTIONS if c in built_now["full"]),
+                None,
+            )
+            if _fast_target:
+                _parts = _fast_target.split("__")
+                _embed, _variant, _strategy = _parts[0], _parts[1], _parts[2]
+                _target = _fast_target
+            else:
+                # Không có fast-load nào trong DB → không auto-start
+                st.session_state.auto_started = True
+                _target = None  # type: ignore[assignment]
+
+        if _target and _target in built_now["full"]:
             _cats = list(_admin_cfg.get("categories", DEFAULT_CATEGORIES))
             with st.spinner("⏳ Đang khởi động chatbot..."):
                 _ok, _msg = _do_start_engine(
