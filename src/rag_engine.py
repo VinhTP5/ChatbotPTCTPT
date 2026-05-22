@@ -11,6 +11,8 @@ Khác với phiên bản cũ:
 
 from __future__ import annotations
 
+# pylint: disable=broad-exception-caught
+
 import logging
 import unicodedata
 from functools import lru_cache
@@ -24,7 +26,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from config import (
+from src.config import (
     CHROMA_DIR,
     DEFAULT_CHUNKING_STRATEGY,
     DEFAULT_CHUNK_VARIANT,
@@ -48,7 +50,7 @@ from config import (
     get_embed_alias,
     get_embed_model_name,
 )
-from llm_providers import (
+from src.llm_providers import (
     NoProviderConfiguredError,
     ProviderUnavailableError,
     build_llm,
@@ -139,12 +141,9 @@ def _get_collection_count(
     db_signature: tuple[tuple[str, int, int], ...],
 ) -> int:
     """Cache doc_count của collection tương ứng với trạng thái DB hiện tại."""
-    return _get_vectorstore(
-        chroma_dir=chroma_dir,
-        collection_name=collection_name,
-        embed_alias=embed_alias,
-        db_signature=db_signature,
-    )._collection.count()
+    del embed_alias, db_signature
+    client = chromadb.PersistentClient(path=chroma_dir)
+    return int(client.get_collection(collection_name).count())
 
 
 @lru_cache(maxsize=8)
@@ -152,10 +151,25 @@ def _list_available_collections_cached(
     chroma_dir: str,
     db_signature: tuple[tuple[str, int, int], ...],
 ) -> tuple[str, ...]:
-    """Cache danh sách collection để sidebar không query PersistentClient lặp lại."""
+    """Cache danh sách collection khả dụng để sidebar không query lặp lại.
+
+    Ngoài liệt kê tên collection, hàm còn kiểm tra nhanh khả năng đọc metadata/count
+    để loại các collection bị lỗi segment/index (thường do mismatch phiên bản Chroma).
+    """
     del db_signature
     client = chromadb.PersistentClient(path=chroma_dir)
-    return tuple(sorted(c.name for c in client.list_collections()))
+    healthy: list[str] = []
+    for col in client.list_collections():
+        try:
+            client.get_collection(col.name).count()
+            healthy.append(col.name)
+        except (RuntimeError, ValueError, TypeError, OSError) as exc:
+            logger.warning(
+                "[RAGEngine] Bo qua collection loi '%s': %s",
+                col.name,
+                exc,
+            )
+    return tuple(sorted(healthy))
 
 def format_docs(docs: list[Document]) -> str:
     """Ghép docs thành context có cấu trúc rõ ràng để LLM bám nguồn tốt hơn."""
@@ -368,7 +382,7 @@ class RAGEngine:
                 )
                 self._rebuild_llm_with_model(candidate)
                 return self._answer_chain.invoke({"input": question, "context": context})
-            except Exception as err:
+            except (RuntimeError, ValueError, TypeError, OSError) as err:
                 attempted.append(candidate)
                 if not is_model_access_error(err):
                     raise err
@@ -383,9 +397,9 @@ class RAGEngine:
     def _load_reranker(self) -> None:
         """Lazy load BGEReranker (tái dùng singleton)."""
         try:
-            from reranker import get_reranker
+            from src.reranker import get_reranker
             self._reranker = get_reranker(RERANKER_MODEL)
-        except Exception as exc:
+        except (ImportError, RuntimeError, OSError, ValueError, TypeError) as exc:
             logger.warning("[RAGEngine] Không thể load reranker: %s", exc)
             self._use_rerank = False
             self._reranker = None
@@ -459,7 +473,7 @@ class RAGEngine:
                     seen_keys.add(n_key)
                     expanded.append(Document(page_content=content, metadata=nmeta))
 
-            except Exception as exc:
+            except (RuntimeError, ValueError, TypeError, OSError, KeyError) as exc:
                 logger.debug("[RAGEngine] neighbor expand error for %s: %s", doc_name, exc)
 
         return expanded
@@ -590,7 +604,7 @@ class RAGEngine:
             )
             for scored_doc, score in scored:
                 score_lookup[self._doc_key(scored_doc)] = float(score)
-        except Exception:
+        except (RuntimeError, ValueError, TypeError):
             score_lookup = {}
 
         rows: list[dict] = []
@@ -641,7 +655,7 @@ class RAGEngine:
         context = format_docs(docs)
         try:
             answer = self._answer_chain.invoke({"input": question, "context": context})
-        except Exception as err:
+        except (RuntimeError, ValueError, TypeError, OSError) as err:
             answer = self._fallback_and_retry_answer(question, context, err)
         sources = get_unique_sources(docs)
         return RAGResult(answer=answer, sources=sources, docs=docs)
@@ -673,7 +687,7 @@ def load_rag_engine(
     neighbor_k: int = DEFAULT_NEIGHBOR_K,
     rerank_top_n: Optional[int] = DEFAULT_RERANK_TOP_N,
     # Giữ tham số cũ để không phá interface
-    groq_api_key: Optional[str] = None,   # noqa: ARG001  (deprecated, ignored)
+    _groq_api_key: Optional[str] = None,
 ) -> tuple[RAGEngine, Any, int]:
     """
     Khởi tạo RAG engine.
@@ -687,6 +701,8 @@ def load_rag_engine(
         neighbor_k  : số chunk láng giềng mở rộng (0 = tắt, 1 = ±1 chunk).
         rerank_top_n: số chunk giữ lại sau rerank (None = bằng top_k).
     """
+    del _groq_api_key
+
     engine = RAGEngine(
         provider    = provider,
         model       = model_name,
@@ -717,5 +733,5 @@ def list_available_collections(chroma_dir: str = CHROMA_DIR) -> list[str]:
         return []
     try:
         return list(_list_available_collections_cached(chroma_dir, _db_signature(chroma_dir)))
-    except Exception:
+    except (RuntimeError, ValueError, TypeError, OSError):
         return []

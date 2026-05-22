@@ -15,6 +15,8 @@ Người dùng cuối KHÔNG cần nhập API key. App tự phát hiện provide
 
 from __future__ import annotations
 
+# pylint: disable=broad-exception-caught
+
 # Fix encoding UTF-8 trên Windows (Python 3.14 mặc định dùng cp1252)
 import os as _os
 _os.environ.setdefault("PYTHONUTF8", "1")
@@ -59,9 +61,9 @@ def _reassemble_sqlite() -> None:
         if h.hexdigest() != expected:
             sqlite.unlink()
             raise RuntimeError("[startup] chroma.sqlite3 bị lỗi checksum — kiểm tra lại các part.")
-        print(f"[startup] ✓ Checksum OK.", flush=True)
+        print("[startup] ✓ Checksum OK.", flush=True)
     else:
-        print(f"[startup] ✓ Ghép xong.", flush=True)
+        print("[startup] ✓ Ghép xong.", flush=True)
 
 
 _reassemble_sqlite()
@@ -76,7 +78,7 @@ ADMIN_CONFIG_PATH = Path(__file__).resolve().parent / "admin_config.json"
 
 import streamlit as st  # noqa: E402
 
-from config import (  # noqa: E402
+from src.config import (  # noqa: E402
     CHROMA_DIR,
     CHUNKING_STRATEGIES,
     CHUNK_VARIANTS,
@@ -88,7 +90,6 @@ from config import (  # noqa: E402
     DEFAULT_LAMBDA_MULT,
     DEFAULT_MAX_TOKENS,
     DEFAULT_NEIGHBOR_K,
-    DEFAULT_RERANK_TOP_N,
     DEFAULT_SCORE_THRESHOLD,
     DEFAULT_SEARCH_TYPE,
     DEFAULT_TEMPERATURE,
@@ -104,13 +105,13 @@ from config import (  # noqa: E402
     build_collection_name,
     is_fast_load,
 )
-from llm_providers import (  # noqa: E402
+from src.llm_providers import (  # noqa: E402
     NoProviderConfiguredError,
     ProviderUnavailableError,
     available_providers,
     describe_status,
 )
-from rag_engine import load_rag_engine, list_available_collections  # noqa: E402
+from src.rag_engine import load_rag_engine, list_available_collections  # noqa: E402
 
 
 # ── Admin config: đọc/ghi file JSON ──────────────────────────────────────────
@@ -139,7 +140,7 @@ def _load_admin_config() -> dict:
             with open(ADMIN_CONFIG_PATH, encoding="utf-8") as f:
                 saved = json.load(f)
             defaults.update(saved)
-    except Exception:
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
         pass
     return defaults
 
@@ -150,7 +151,7 @@ def _save_admin_config(cfg: dict) -> bool:
         with open(ADMIN_CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
         return True
-    except Exception as e:
+    except (OSError, TypeError, ValueError) as e:
         st.error(f"❌ Không thể lưu cấu hình: {e}")
         return False
 
@@ -160,7 +161,7 @@ def _get_admin_password() -> str:
     try:
         if "ADMIN_PASSWORD" in st.secrets:
             return str(st.secrets["ADMIN_PASSWORD"]).strip()
-    except Exception:
+    except (KeyError, TypeError, ValueError, RuntimeError):
         pass
     return (_os.getenv("ADMIN_PASSWORD") or "").strip()
 
@@ -482,30 +483,30 @@ for _k, _v in _DEFAULTS.items():
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _answer(question: str, debug_retrieval: bool = False) -> tuple[str, list[dict], list[dict]]:
+def _answer(question_text: str, debug_mode: bool = False) -> tuple[str, list[dict], list[dict]]:
     try:
-        if debug_retrieval:
-            result = st.session_state.engine.ask_with_scores(question)
+        if debug_mode:
+            result = st.session_state.engine.ask_with_scores(question_text)
         else:
-            result = st.session_state.engine.ask(question)
+            result = st.session_state.engine.ask(question_text)
         return result.answer, result.sources, result.docs_with_scores
-    except Exception as e:
+    except (AttributeError, RuntimeError, ValueError, TypeError) as e:
         return f"❌ Lỗi khi xử lý câu hỏi: {e}", [], []
 
 
-def _render_source_badge(src: dict) -> str:
-    icon      = file_icon(src.get("type", ""))
-    page      = src.get("page")
-    cat       = src.get("category")
-    size      = src.get("file_size_kb")
+def _render_source_badge(source_obj: dict) -> str:
+    icon      = file_icon(source_obj.get("type", ""))
+    page      = source_obj.get("page")
+    cat       = source_obj.get("category")
+    size      = source_obj.get("file_size_kb")
     bits = []
     if cat:  bits.append(str(cat))
     if page: bits.append(f"trang {page}")
     if size: bits.append(f"{size} KB")
     meta      = " · ".join(bits)
-    view_href = src.get("url") or "#"
-    raw_href  = src.get("raw_url") or view_href
-    name      = src.get("name") or "Không rõ"
+    view_href = source_obj.get("url") or "#"
+    raw_href  = source_obj.get("raw_url") or view_href
+    name      = source_obj.get("name") or "Không rõ"
     return (
         f'<div class="source-item">{icon} '
         f'<a href="{view_href}" target="_blank" title="Xem trên GitHub">{name}</a>'
@@ -515,13 +516,13 @@ def _render_source_badge(src: dict) -> str:
     )
 
 
-def _render_src_card(i: int, src: dict) -> str:
-    icon     = file_icon(src.get("type", ""))
-    href     = src.get("url") or "#"
-    raw_href = src.get("raw_url") or href
-    name     = src.get("name") or "Không rõ"
-    page     = src.get("page")
-    cat      = src.get("category")
+def _render_src_card(source_obj: dict) -> str:
+    icon     = file_icon(source_obj.get("type", ""))
+    href     = source_obj.get("url") or "#"
+    raw_href = source_obj.get("raw_url") or href
+    name     = source_obj.get("name") or "Không rõ"
+    page     = source_obj.get("page")
+    cat      = source_obj.get("category")
     bits = []
     if cat:  bits.append(str(cat))
     if page: bits.append(f"tr.{page}")
@@ -576,48 +577,74 @@ def _docs_with_scores_to_csv(rows: list[dict]) -> str:
 
 
 def _do_start_engine(
-    provider, model, top_k, search_type, fetch_k,
-    lambda_mult, score_threshold, temperature, max_tokens,
-    embed_alias, chunk_variant, chunking_strategy,
-    categories, use_rerank, neighbor_k,
+    provider_name,
+    model_name,
+    retrieval_top_k,
+    retrieval_search_type,
+    retrieval_fetch_k,
+    retrieval_lambda_mult,
+    retrieval_score_threshold,
+    llm_temperature,
+    llm_max_tokens,
+    embedding_alias,
+    chunk_variant_name,
+    chunking_strategy_name,
+    selected_categories,
+    rerank_enabled,
+    neighbor_context_k,
 ) -> tuple[bool, str]:
     """Khởi động RAG engine. Trả về (success, message)."""
     try:
         cats_arg = (
-            categories
-            if len(categories) < len(SOURCE_CATEGORIES)
+            selected_categories
+            if len(selected_categories) < len(SOURCE_CATEGORIES)
             else None
         )
         engine, _retriever, doc_count = load_rag_engine(
-            provider          = provider,
-            model_name        = model,
-            top_k             = top_k,
-            search_type       = search_type,
-            fetch_k           = fetch_k,
-            lambda_mult       = lambda_mult,
-            score_threshold   = score_threshold if search_type == "similarity_score_threshold" else None,
-            temperature       = temperature,
-            max_tokens        = max_tokens,
-            embed_alias       = embed_alias,
-            chunk_variant     = chunk_variant,
-            chunking_strategy = chunking_strategy,
+            provider          = provider_name,
+            model_name        = model_name,
+            top_k             = retrieval_top_k,
+            search_type       = retrieval_search_type,
+            fetch_k           = retrieval_fetch_k,
+            lambda_mult       = retrieval_lambda_mult,
+            score_threshold   = (
+                retrieval_score_threshold
+                if retrieval_search_type == "similarity_score_threshold"
+                else None
+            ),
+            temperature       = llm_temperature,
+            max_tokens        = llm_max_tokens,
+            embed_alias       = embedding_alias,
+            chunk_variant     = chunk_variant_name,
+            chunking_strategy = chunking_strategy_name,
             categories        = cats_arg,
-            use_rerank        = use_rerank,
-            neighbor_k        = neighbor_k,
+            use_rerank        = rerank_enabled,
+            neighbor_k        = neighbor_context_k,
         )
         st.session_state.engine            = engine
         st.session_state.doc_count         = doc_count
         st.session_state.model_loaded      = True
-        st.session_state.selected_provider = provider
-        st.session_state.selected_model    = model
+        st.session_state.selected_provider = provider_name
+        st.session_state.selected_model    = model_name
         st.session_state.messages          = []
         st.session_state.auto_started      = True
         return True, f"✅ Sẵn sàng! ({doc_count:,} vectors)"
-    except FileNotFoundError as e:
-        return False, f"❌ {e}"
     except (NoProviderConfiguredError, ProviderUnavailableError) as e:
         return False, f"❌ Cấu hình LLM: {e}"
     except Exception as e:
+        if isinstance(e, FileNotFoundError):
+            return False, f"❌ {e}"
+        err_txt = str(e)
+        if (
+            "Error deserializing pickle file" in err_txt
+            or "unsupported opcode" in err_txt
+            or "Error constructing hnsw segment reader" in err_txt
+        ):
+            return (
+                False,
+                "❌ Collection hiện tại không tương thích hoặc đã hỏng trong ChromaDB. "
+                "Vui lòng chọn collection khác hoặc rebuild DB bằng build_db.py rồi thử lại.",
+            )
         return False, f"❌ Lỗi: {e}"
 
 
@@ -847,15 +874,21 @@ with st.sidebar:
             ):
                 with st.spinner("Đang tải mô hình..."):
                     ok, msg = _do_start_engine(
-                        provider=selected_provider, model=selected_model,
-                        top_k=top_k, search_type=search_type, fetch_k=fetch_k,
-                        lambda_mult=lambda_mult, score_threshold=score_threshold,
-                        temperature=temperature, max_tokens=max_tokens,
-                        embed_alias=selected_embed_alias,
-                        chunk_variant=selected_chunk_variant,
-                        chunking_strategy=selected_chunking_strategy,
-                        categories=admin_cats,
-                        use_rerank=use_rerank, neighbor_k=neighbor_k,
+                        provider_name=selected_provider,
+                        model_name=selected_model,
+                        retrieval_top_k=top_k,
+                        retrieval_search_type=search_type,
+                        retrieval_fetch_k=fetch_k,
+                        retrieval_lambda_mult=lambda_mult,
+                        retrieval_score_threshold=score_threshold,
+                        llm_temperature=temperature,
+                        llm_max_tokens=max_tokens,
+                        embedding_alias=selected_embed_alias,
+                        chunk_variant_name=selected_chunk_variant,
+                        chunking_strategy_name=selected_chunking_strategy,
+                        selected_categories=admin_cats,
+                        rerank_enabled=use_rerank,
+                        neighbor_context_k=neighbor_k,
                     )
                 if ok:
                     st.session_state.selected_categories = list(admin_cats)
@@ -915,28 +948,27 @@ with st.sidebar:
             c2.metric("Câu hỏi", st.session_state.total_questions)
 
 
-# ── Auto-start: tự khởi động khi mở app lần đầu ─────────────────────────────
-# Chỉ auto-start với FAST_LOAD_COLLECTIONS (bge_m3__coarse hoặc minilm__coarse).
-# Collections khác phải do admin bấm "Áp dụng" để load theo yêu cầu.
+# ── Auto-start: luôn khởi động sẵn với cấu hình mặc định ────────────────────
+# Ưu tiên cấu hình mặc định hệ thống; chỉ fallback khi DB/provider hiện tại
+# không đáp ứng được.
 if not st.session_state.model_loaded and not st.session_state.auto_started:
     avail_now  = available_providers()
     built_now  = _built_matrix()
     if avail_now and built_now["full"]:
-        # Ưu tiên provider/model từ admin config
-        _prov_cfg = _admin_cfg.get("provider", "openai")
-        _prov = _prov_cfg if _prov_cfg in avail_now else avail_now[0]
-        _model_cfg = _admin_cfg.get("model", "gpt-4o")
+        # 1) Ưu tiên provider/model mặc định của hệ thống
+        _prov_default = "openai"
+        _prov = _prov_default if _prov_default in avail_now else avail_now[0]
+        _model_cfg = PROVIDERS[_prov].get("default")
         _models_list = list(PROVIDERS[_prov]["models"].keys())
         _model = _model_cfg if _model_cfg in _models_list else _models_list[0]
 
-        _embed   = _admin_cfg.get("embed_alias", DEFAULT_EMBED_ALIAS)
-        _variant = _admin_cfg.get("chunk_variant", DEFAULT_CHUNK_VARIANT)
-        _strategy = _admin_cfg.get("chunking_strategy", DEFAULT_CHUNKING_STRATEGY)
+        _embed   = DEFAULT_EMBED_ALIAS
+        _variant = DEFAULT_CHUNK_VARIANT
+        _strategy = DEFAULT_CHUNKING_STRATEGY
         _target  = build_collection_name(_embed, _variant, _strategy)
 
-        # ── Kiểm tra fast-load: nếu collection trong admin config KHÔNG phải
-        #    fast-load, tìm fast-load collection tốt nhất để dùng thay thế.
-        if not is_fast_load(_target) or _target not in built_now["full"]:
+        # 2) Nếu default collection chưa sẵn sàng, fallback sang fast-load khả dụng.
+        if _target not in built_now["full"]:
             # Duyệt theo thứ tự ưu tiên trong FAST_LOAD_COLLECTIONS
             _fast_target = next(
                 (c for c in FAST_LOAD_COLLECTIONS if c in built_now["full"]),
@@ -952,26 +984,32 @@ if not st.session_state.model_loaded and not st.session_state.auto_started:
                 _target = None  # type: ignore[assignment]
 
         if _target and _target in built_now["full"]:
-            _cats = list(_admin_cfg.get("categories", DEFAULT_CATEGORIES))
+            _cats = list(DEFAULT_CATEGORIES)
             with st.spinner("⏳ Đang khởi động chatbot..."):
                 _ok, _msg = _do_start_engine(
-                    provider=_prov, model=_model,
-                    top_k=int(_admin_cfg.get("top_k", DEFAULT_TOP_K)),
-                    search_type=_admin_cfg.get("search_type", DEFAULT_SEARCH_TYPE),
-                    fetch_k=int(_admin_cfg.get("fetch_k", DEFAULT_FETCH_K)),
-                    lambda_mult=float(_admin_cfg.get("lambda_mult", DEFAULT_LAMBDA_MULT)),
-                    score_threshold=_admin_cfg.get("score_threshold", DEFAULT_SCORE_THRESHOLD),
-                    temperature=float(_admin_cfg.get("temperature", DEFAULT_TEMPERATURE)),
-                    max_tokens=int(_admin_cfg.get("max_tokens", DEFAULT_MAX_TOKENS)),
-                    embed_alias=_embed,
-                    chunk_variant=_variant,
-                    chunking_strategy=_strategy,
-                    categories=_cats,
-                    use_rerank=bool(_admin_cfg.get("use_rerank", DEFAULT_USE_RERANK)),
-                    neighbor_k=int(_admin_cfg.get("neighbor_k", DEFAULT_NEIGHBOR_K)),
+                    provider_name=_prov,
+                    model_name=_model,
+                    retrieval_top_k=DEFAULT_TOP_K,
+                    retrieval_search_type=DEFAULT_SEARCH_TYPE,
+                    retrieval_fetch_k=DEFAULT_FETCH_K,
+                    retrieval_lambda_mult=DEFAULT_LAMBDA_MULT,
+                    retrieval_score_threshold=DEFAULT_SCORE_THRESHOLD,
+                    llm_temperature=DEFAULT_TEMPERATURE,
+                    llm_max_tokens=DEFAULT_MAX_TOKENS,
+                    embedding_alias=_embed,
+                    chunk_variant_name=_variant,
+                    chunking_strategy_name=_strategy,
+                    selected_categories=_cats,
+                    rerank_enabled=DEFAULT_USE_RERANK,
+                    neighbor_context_k=DEFAULT_NEIGHBOR_K,
                 )
             if _ok:
                 st.session_state.selected_categories = _cats
+                st.session_state.selected_embed_alias = _embed
+                st.session_state.selected_chunk_variant = _variant
+                st.session_state.selected_chunking_strategy = _strategy
+                st.session_state.use_rerank = DEFAULT_USE_RERANK
+                st.session_state.neighbor_k = DEFAULT_NEIGHBOR_K
                 st.rerun()
             else:
                 st.session_state.auto_started = True  # ngăn loop vô hạn
@@ -981,9 +1019,9 @@ if not st.session_state.model_loaded and not st.session_state.auto_started:
 st.markdown(
     """
 <div class="main-header">
-    <h1>🎓 Chatbot Tư Vấn Giáo Dục Phổ Thông</h1>
-    <p>Hỏi đáp thông minh dựa trên văn bản quy định của Bộ GD&amp;ĐT &amp; FPT/FSC</p>
-    <span class="header-badge">CT GDPT 2018 · TT 32/2018 · Quyết định FPT/FSC</span>
+    <h1>🎓 Chatbot hỗ trợ thông tin về Chương trình FPT Schools</h1>
+    <p>Hỗ trợ tra cứu thông tin từ nguồn tài liệu FPT Schools và Bộ GD&amp;ĐT</p>
+    <span class="header-badge">FPT Schools · Bộ GD&amp;ĐT · Tài liệu đã được thẩm định nội bộ</span>
 </div>
 """,
     unsafe_allow_html=True,
@@ -1028,7 +1066,7 @@ if set(_new_cats) != set(_cur_cats):
             st.session_state.engine.set_retrieval_params(
                 categories=cats_arg_rt,
             )
-        except Exception:
+        except (AttributeError, RuntimeError, ValueError, TypeError):
             pass
 
 st.markdown('<div class="chat-shell">', unsafe_allow_html=True)
@@ -1038,7 +1076,7 @@ if not st.session_state.model_loaded:
     col1, col2, col3 = st.columns(3)
     cards = [
         ("1", "Đang khởi động", "Chatbot đang tải dữ liệu, vui lòng chờ..."),
-        ("2", "Chọn nguồn",     "Bật/tắt nguồn tài liệu FPT hoặc Bộ GD&ĐT ở trên"),
+        ("2", "Chọn nguồn",     "Bật/tắt để chọn nguồn tài liệu FPT và hoặc Bộ GD&ĐT ở trên."),
         ("3", "Bắt đầu hỏi",   "Nhập câu hỏi vào ô bên dưới"),
     ]
     for col, (num, title, desc) in zip([col1, col2, col3], cards):
@@ -1051,22 +1089,6 @@ if not st.session_state.model_loaded:
                 f'</div>',
                 unsafe_allow_html=True,
             )
-    st.markdown("---")
-    st.markdown("##### 💡 Câu hỏi ví dụ")
-    ex_cols = st.columns(2)
-    examples = [
-        "Học sinh cần đáp ứng điều kiện gì để được lên lớp?",
-        "Cấu trúc chương trình GDPT 2018 gồm những gì?",
-        "Quy định về đánh giá học sinh tiểu học như thế nào?",
-        "Các môn học bắt buộc ở cấp THPT là gì?",
-        "Điều kiện tốt nghiệp THPT theo quy định hiện hành?",
-        "Kế hoạch giáo dục FSC năm 2026-2027 có điểm gì mới?",
-    ]
-    for i, ex in enumerate(examples):
-        with ex_cols[i % 2]:
-            st.markdown(f"- *{ex}*")
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.stop()
 
 
 # ── Layout chính: chat (3) | nguồn (1) ───────────────────────────────────────
@@ -1079,23 +1101,29 @@ with chat_col:
             st.markdown(msg["content"])
             if msg["role"] == "assistant" and msg.get("sources"):
                 with st.expander(f"📚 {len(msg['sources'])} tài liệu tham khảo", expanded=False):
-                    for src in msg["sources"]:
-                        st.markdown(_render_source_badge(src), unsafe_allow_html=True)
+                    for source_item in msg["sources"]:
+                        st.markdown(_render_source_badge(source_item), unsafe_allow_html=True)
 
     # Input ở cuối
-    question = st.chat_input("Nhập câu hỏi về chương trình GDPT, quy định FPT/FSC...")
+    user_question = st.chat_input(
+        "Nhập câu hỏi về Chương trình FPT Schools hoặc quy định Bộ GD&ĐT...",
+        disabled=not st.session_state.model_loaded,
+    )
 
-    if question:
-        st.session_state.messages.append({"role": "user", "content": question})
+    if not st.session_state.model_loaded:
+        st.info("Hệ thống đang khởi động. Ô chat đã sẵn sàng và sẽ mở nhập ngay khi tải xong dữ liệu.")
+
+    if user_question and st.session_state.model_loaded:
+        st.session_state.messages.append({"role": "user", "content": user_question})
         with st.chat_message("user"):
-            st.markdown(question)
+            st.markdown(user_question)
 
         with st.chat_message("assistant"):
             with st.spinner("🔍 Đang phân tích tài liệu..."):
                 model_before = getattr(st.session_state.engine, "model", st.session_state.selected_model)
                 answer, sources, docs_with_scores = _answer(
-                    question,
-                    debug_retrieval=st.session_state.debug_retrieval,
+                    user_question,
+                    debug_mode=st.session_state.debug_retrieval,
                 )
                 model_after = getattr(st.session_state.engine, "model", model_before)
             st.markdown(answer)
@@ -1104,8 +1132,8 @@ with chat_col:
                 st.session_state.selected_model = model_after
             if sources:
                 with st.expander(f"📚 {len(sources)} tài liệu tham khảo", expanded=False):
-                    for src in sources:
-                        st.markdown(_render_source_badge(src), unsafe_allow_html=True)
+                    for source_item in sources:
+                        st.markdown(_render_source_badge(source_item), unsafe_allow_html=True)
 
         st.session_state.messages.append({
             "role"   : "assistant",
@@ -1150,8 +1178,8 @@ with source_col:
             f"📚 Nguồn ({len(st.session_state.last_sources)})",
             expanded=False,
         ):
-            for i, src in enumerate(st.session_state.last_sources, 1):
-                st.markdown(_render_src_card(i, src), unsafe_allow_html=True)
+            for source_item in st.session_state.last_sources:
+                st.markdown(_render_src_card(source_item), unsafe_allow_html=True)
     else:
         st.caption("📚 Nguồn tài liệu sẽ hiện ở đây sau câu trả lời đầu tiên.")
 
@@ -1159,15 +1187,15 @@ with source_col:
     if st.session_state.admin_logged_in and st.session_state.debug_retrieval and st.session_state.last_docs_with_scores:
         st.divider()
         with st.expander("🔍 Debug retrieval", expanded=False):
-            rows = st.session_state.last_docs_with_scores
+            debug_rows = st.session_state.last_docs_with_scores
             st.download_button(
                 "📥 Export CSV",
-                data=_docs_with_scores_to_csv(rows),
+                data=_docs_with_scores_to_csv(debug_rows),
                 file_name="retrieved_chunks.csv",
                 mime="text/csv",
                 use_container_width=True,
             )
-            for i, row in enumerate(rows, start=1):
+            for i, row in enumerate(debug_rows, start=1):
                 score     = row.get("score")
                 score_txt = f"{score:.4f}" if isinstance(score, float) else "n/a"
                 with st.expander(f"Chunk {i} · {score_txt}", expanded=False):
