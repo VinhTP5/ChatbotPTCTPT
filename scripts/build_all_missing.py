@@ -4,7 +4,7 @@ build_all_missing.py
 Build nốt tất cả các combinations Embedding × Chunk variant × Chunking strategy
 còn thiếu hoặc rỗng trong ChromaDB, sử dụng smart sync (không rebuild toàn bộ).
 
-Tổng cộng 45 combinations = 5 embeds × 3 chunk variants × 3 chunking strategies.
+Tổng cộng 18 combinations = 2 embeds × 3 chunk variants × 3 chunking strategies.
 
 Chiến lược tối ưu tốc độ:
     - Nhóm theo embedding model → mỗi model chỉ load 1 lần
@@ -14,7 +14,7 @@ Chiến lược tối ưu tốc độ:
 Cách dùng:
     python scripts/build_all_missing.py                          # build combinations còn thiếu
     python scripts/build_all_missing.py --dry-run                # chỉ liệt kê, không build
-    python scripts/build_all_missing.py --force                  # sync TẤT CẢ 45 combinations
+    python scripts/build_all_missing.py --force                  # sync TẤT CẢ 18 combinations
     python scripts/build_all_missing.py --embed bge_m3           # chỉ build 1 embedding
     python scripts/build_all_missing.py --embed bge_m3 minilm    # chỉ build 2 embeddings
     python scripts/build_all_missing.py --skip-late              # bỏ qua late/long_late
@@ -55,7 +55,7 @@ from build_db import mode_sync
 DIVIDER = "=" * 72
 
 # Thứ tự ưu tiên embedding (nhẹ → nặng)
-EMBED_ORDER = ["minilm", "mpnet", "e5_base", "e5_large", "bge_m3"]
+EMBED_ORDER = ["minilm", "bge_m3"]
 
 
 def list_collections(db_dir: str) -> dict[str, int]:

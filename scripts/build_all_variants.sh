@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  build_all_variants.sh — Build/sync đầy đủ 45 combinations
+#  build_all_variants.sh — Build/sync đầy đủ 18 combinations
 #                          Embedding × Chunk variant × Chunking strategy
 #
 #  Quy tắc (áp dụng cho từng combination, xem build_db.sh):
@@ -8,14 +8,13 @@
 #    - Collection đã có dữ liệu                       → sync
 #
 #  Thứ tự — nhóm theo embedding (load model 1 lần/nhóm):
-#    01–09  minilm   │ 10–18  mpnet  │ 19–27  e5_base
-#    28–36  e5_large │ 37–45  bge_m3
+#    01–09  minilm   │ 10–18  bge_m3
 #
 #  Mỗi nhóm embed × 3 variants (fine/balanced/coarse) × 3 strategies
 #  (standard/late/long_late) theo thứ tự từ nhẹ đến nặng.
 #
 #  Cách dùng:
-#    bash scripts/build_all_variants.sh            # build tất cả 45
+#    bash scripts/build_all_variants.sh            # build tất cả 18
 #    bash scripts/build_all_variants.sh --dry-run  # chỉ xem sẽ làm gì
 # =============================================================================
 set -euo pipefail
@@ -32,7 +31,7 @@ if [[ "${1:-}" == "--dry-run" ]]; then
     echo "[DRY RUN] Chỉ hiển thị — không thực sự chạy."
 fi
 
-TOTAL=45
+TOTAL=18
 SEQ=0
 ERRORS=0
 START_TIME=$(date +%s)
@@ -86,7 +85,7 @@ EOF
 }
 
 echo "========================================================================"
-echo "  BUILD ALL VARIANTS — 45 combinations"
+echo "  BUILD ALL VARIANTS — 18 combinations"
 echo "  Bắt đầu: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "========================================================================"
 
@@ -101,40 +100,7 @@ run_one minilm coarse   standard
 run_one minilm coarse   late
 run_one minilm coarse   long_late
 
-# ── 10–18  mpnet ─────────────────────────────────────────────────────────────
-run_one mpnet fine     standard
-run_one mpnet fine     late
-run_one mpnet fine     long_late
-run_one mpnet balanced standard
-run_one mpnet balanced late
-run_one mpnet balanced long_late
-run_one mpnet coarse   standard
-run_one mpnet coarse   late
-run_one mpnet coarse   long_late
-
-# ── 19–27  e5_base ───────────────────────────────────────────────────────────
-run_one e5_base fine     standard
-run_one e5_base fine     late
-run_one e5_base fine     long_late
-run_one e5_base balanced standard
-run_one e5_base balanced late
-run_one e5_base balanced long_late
-run_one e5_base coarse   standard
-run_one e5_base coarse   late
-run_one e5_base coarse   long_late
-
-# ── 28–36  e5_large ──────────────────────────────────────────────────────────
-run_one e5_large fine     standard
-run_one e5_large fine     late
-run_one e5_large fine     long_late
-run_one e5_large balanced standard
-run_one e5_large balanced late
-run_one e5_large balanced long_late
-run_one e5_large coarse   standard
-run_one e5_large coarse   late
-run_one e5_large coarse   long_late
-
-# ── 37–45  bge_m3 ────────────────────────────────────────────────────────────
+# ── 10–18  bge_m3 ────────────────────────────────────────────────────────────
 run_one bge_m3 fine     standard
 run_one bge_m3 fine     late
 run_one bge_m3 fine     long_late

@@ -142,8 +142,16 @@ def _get_collection_count(
 ) -> int:
     """Cache doc_count của collection tương ứng với trạng thái DB hiện tại."""
     del embed_alias, db_signature
-    client = chromadb.PersistentClient(path=chroma_dir)
-    return int(client.get_collection(collection_name).count())
+    try:
+        client = chromadb.PersistentClient(path=chroma_dir)
+        return int(client.get_collection(collection_name).count())
+    except Exception as exc:
+        logger.warning(
+            "[RAGEngine] Khong the lay so luong document cho collection '%s': %s",
+            collection_name,
+            exc,
+        )
+        return 0
 
 
 @lru_cache(maxsize=8)
@@ -163,7 +171,7 @@ def _list_available_collections_cached(
         try:
             client.get_collection(col.name).count()
             healthy.append(col.name)
-        except (RuntimeError, ValueError, TypeError, OSError) as exc:
+        except Exception as exc:
             logger.warning(
                 "[RAGEngine] Bo qua collection loi '%s': %s",
                 col.name,

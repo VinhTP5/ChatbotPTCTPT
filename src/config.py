@@ -44,18 +44,6 @@ EMBED_MODELS: dict[str, dict[str, str]] = {
         "name": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
         "label": "MiniLM-L12 (baseline)",
     },
-    "mpnet": {
-        "name": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-        "label": "MPNet multilingual base",
-    },
-    "e5_base": {
-        "name": "intfloat/multilingual-e5-base",
-        "label": "E5 multilingual base",
-    },
-    "e5_large": {
-        "name": "intfloat/multilingual-e5-large",
-        "label": "E5 multilingual large",
-    },
     "bge_m3": {
         "name": "BAAI/bge-m3",
         "label": "BGE-M3",
