@@ -38,6 +38,8 @@ streamlit run app.py
 Xem tai lieu tong hop du an trong [docs/PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md).
 Xem chi tiet deploy trong [docs/DEPLOY.md](docs/DEPLOY.md) va scripts trong [docs/SCRIPTS.md](docs/SCRIPTS.md).
 
+Tham khao quy chuan tu vung UI de thong nhat cach dung tu khi mo rong giao dien tai [../SinhdeDoAI/UI-GLOSSARY.md](../SinhdeDoAI/UI-GLOSSARY.md).
+
 ## 📝 License
 
 Xem [`docs/LICENSE`](docs/LICENSE).
